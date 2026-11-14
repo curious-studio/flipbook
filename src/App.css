@@ -1,0 +1,43 @@
+* { box-sizing: border-box; }
+body { margin: 0; font-family: system-ui, -apple-system, sans-serif; background: #0f0f1a; color: #eee; }
+.app { min-height: 100vh; display: flex; flex-direction: column; }
+.topbar {
+  display: flex; align-items: center; justify-content: space-between; gap: 12px;
+  padding: 12px 20px; background: #1a1a2e; border-bottom: 1px solid #2a2a3e;
+}
+.topbar h1 { margin: 0; font-size: 18px; }
+.topbar-actions { display: flex; gap: 8px; align-items: center; }
+.title-input {
+  padding: 6px 10px; background: #0f0f1a; border: 1px solid #333; color: #eee;
+  border-radius: 6px; min-width: 180px;
+}
+button {
+  padding: 6px 12px; border: 1px solid #333; background: #2b2b2b; color: #eee;
+  border-radius: 6px; cursor: pointer; font-size: 13px;
+}
+button:hover { background: #3a3a3a; }
+button:disabled { opacity: 0.5; cursor: not-allowed; }
+.main { flex: 1; display: grid; grid-template-columns: 1fr auto; gap: 0; min-height: 0; }
+.uploader {
+  grid-column: 1 / -1; display: grid; place-items: center; min-height: 60vh;
+}
+.uploader-inner { text-align: center; }
+.uploader-icon { font-size: 64px; }
+.uploader h2 { margin: 8px 0 4px; }
+.uploader p { color: #999; }
+.progress { margin-top: 12px; color: #5b9bd5; }
+.error { margin-top: 12px; color: #e05555; }
+.viewer-area { padding: 20px; display: flex; flex-direction: column; align-items: center; gap: 16px; }
+.viewer { }
+.book .page { background: #fff; }
+.page img { width: 100%; height: 100%; object-fit: contain; display: block; }
+.controls { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; justify-content: center; }
+.page-count { color: #aaa; font-variant-numeric: tabular-nums; }
+.sidebar { width: 240px; border-left: 1px solid #2a2a3e; padding: 16px; overflow: auto; }
+.sidebar h3 { margin: 0 0 8px; font-size: 14px; color: #aaa; }
+.sidebar ul { list-style: none; padding: 0; margin: 0; }
+.sidebar li { display: flex; align-items: center; gap: 6px; padding: 6px 0; border-bottom: 1px solid #222; }
+.sidebar .link { background: none; border: none; color: #5b9bd5; padding: 0; text-align: left; flex: 1; }
+.sidebar .muted { color: #666; font-size: 12px; }
+.sidebar .icon { padding: 2px 6px; font-size: 11px; }
+.link { background: none; border: none; color: #5b9bd5; cursor: pointer; }
