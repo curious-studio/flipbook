@@ -22,4 +22,4 @@ export interface BookSummary {
   updatedAt: number
 }
 
-export type ExportFormat = 'html' | 'pdf' | 'zip'
+export type ExportFormat = 'html' | 'pdf' | 'pdf-single' | 'zip'

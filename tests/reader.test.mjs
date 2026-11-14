@@ -3,7 +3,7 @@ import assert from 'node:assert/strict'
 import vm from 'node:vm'
 import { fitPage, getSpreads, getSpreadIndex } from '../src/lib/layout.ts'
 import { buildStandaloneHtml } from '../src/lib/exportHtml.ts'
-import { exportSpreadPdf } from '../src/lib/exportPdf.ts'
+import { exportSpreadPdf, exportSinglePagePdf } from '../src/lib/exportPdf.ts'
 
 const pixel = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAIAAACQd1PeAAAADElEQVR4nGP4//8/AAX+Av4N70a4AAAAAElFTkSuQmCC'
 const makePages = (dimensions) => dimensions.map(([width, height], i) => ({ id: String(i), width, height, dataUrl: pixel }))
@@ -39,7 +39,7 @@ function offlineReader(pages) {
   const elements = new Map()
   const element = () => ({ style:{},children:[],className:'',value:'spread',textContent:'Test book',focus(){},select(){},clientWidth:1000,clientHeight:600,appendChild(child){this.children.push(child)},replaceChildren(){this.children=[]} })
   for(const id of ['stage','canvas','mode','counter','prev','next','fit','minus','plus','edit-title','title-editor']) elements.set(id,element())
-  const context={document:{getElementById:id=>elements.get(id),createElement:element},window:{addEventListener(){}},ResizeObserver:class {observe(){}}}
+  const context={document:{getElementById:id=>elements.get(id),createElement:element},window:{addEventListener(type, handler){elements.set(type, handler)}},ResizeObserver:class {observe(){}}}
   vm.runInNewContext(html.match(/<script>([\s\S]*?)<\/script>/)[1],context)
   return elements
 }
@@ -116,4 +116,34 @@ test('offline title can be renamed, cancelled, and cannot be cleared or inject m
   assert.equal(button.textContent,'New title')
   button.onclick(); input.value='<img src=x onerror=alert(1)>'; input.onblur()
   assert.equal(button.textContent,'<img src=x onerror=alert(1)>')
+})
+
+
+test('offline arrow navigation leaves text editing and select controls alone', () => {
+  const reader=offlineReader(makePages([[595,842],[595,842],[595,842]]))
+  const keydown=reader.get('keydown')
+  let prevented=false
+  const event={key:'ArrowRight',target:{closest:()=>({})},preventDefault(){prevented=true},stopPropagation(){}}
+  keydown(event)
+  assert.equal(reader.get('counter').textContent,'Page 1 of 3')
+  assert.equal(prevented,false)
+  keydown({...event,target:{closest:()=>null}})
+  assert.equal(reader.get('counter').textContent,'Pages 2–3 of 3')
+  assert.equal(prevented,true)
+})
+
+
+test('single-page PDF exports one sheet per page with each original aspect ratio', async () => {
+  const previousDocument=globalThis.document, previousImage=globalThis.Image
+  globalThis.document={createElement:()=>({width:0,height:0,getContext:()=>({fillRect(){},drawImage(){}}),toDataURL:()=>pixel})}
+  globalThis.Image=class {naturalWidth=1;naturalHeight=1;set src(_value){queueMicrotask(()=>this.onload())}}
+  try {
+    const sizes=[[595,842],[842,595],[600,600]]
+    const pdf=await (await exportSinglePagePdf('Mixed pages',makePages(sizes))).text()
+    assert.equal((pdf.match(/\/Type \/Page\b/g)||[]).length,3)
+    const boxes=[...pdf.matchAll(/\/MediaBox \[0 0 ([\d.]+) ([\d.]+)\]/g)]
+    assert.equal(boxes.length,3)
+    boxes.forEach((box,i)=>assert.ok(Math.abs(Number(box[1])/Number(box[2])-sizes[i][0]/sizes[i][1])<1e-8))
+    await assert.rejects(()=>exportSinglePagePdf('Empty',[]),/No pages/)
+  } finally {globalThis.document=previousDocument;globalThis.Image=previousImage}
 })

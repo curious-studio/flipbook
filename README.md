@@ -55,3 +55,13 @@ local-save recovery, and thumbnail navigation.
 4. `.github/workflows/deploy.yml` builds and deploys the app.
 
 The root `design/` folder contains local-only references and is ignored by Git.
+
+## Fonts
+
+Fira Sans is self-hosted from `public/fonts/` with the SIL Open Font License
+in `public/fonts/OFL.txt`. The WOFF2 files come from Google Fonts (Fira Sans v18),
+with weights 300, 400, 500, 600, and 700 and all provided language subsets.
+Source: https://fonts.google.com/specimen/Fira+Sans
+
+The app makes no Google Fonts requests at runtime. Offline HTML exports embed
+the font files and license so they do not need a network connection.

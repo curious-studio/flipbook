@@ -90,6 +90,31 @@ export async function exportSpreadPdf(title: string, pages: BookPage[]): Promise
   return pdf.output('blob')
 }
 
+/** One PDF sheet per source page, preserving each page's own proportions. */
+export async function exportSinglePagePdf(title: string, pages: BookPage[]): Promise<Blob> {
+  if (!pages.length) throw new Error('No pages to export.')
+  let pdf: jsPDF | undefined
+  for (const page of pages) {
+    const height = 1400
+    const width = height * page.width / page.height
+    const orientation = width > height ? 'landscape' : 'portrait'
+    if (!pdf) {
+      pdf = new jsPDF({ orientation, unit: 'px', format: [width, height] })
+      pdf.setProperties({ title })
+    } else pdf.addPage([width, height], orientation)
+    const canvas = document.createElement('canvas')
+    canvas.width = Math.max(1, Math.round(width))
+    canvas.height = height
+    const ctx = canvas.getContext('2d')!
+    ctx.fillStyle = '#ffffff'
+    ctx.fillRect(0, 0, canvas.width, canvas.height)
+    const img = await loadImage(page.dataUrl)
+    drawContained(ctx, img, 0, canvas.width, canvas.height)
+    pdf.addImage(canvas.toDataURL('image/jpeg', 0.92), 'JPEG', 0, 0, width, height)
+  }
+  return pdf!.output('blob')
+}
+
 function loadImage(src: string): Promise<HTMLImageElement> {
   return new Promise((resolve, reject) => {
     const img = new Image()

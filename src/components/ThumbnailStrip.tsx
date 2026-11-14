@@ -1,6 +1,7 @@
-import { useRef, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import type { BookPage } from '../types'
 import { getSpreads } from '../lib/layout'
+import { thumbnailWidth, revealOffset } from '../lib/responsive'
 
 interface Props {
   pages: BookPage[]
@@ -12,18 +13,30 @@ interface Props {
 }
 
 export default function ThumbnailStrip({ pages, visiblePages, onReorder, onSelect, onAddFiles, disabled }: Props) {
+  const stripRef = useRef<HTMLDivElement>(null)
+  const firstVisible = visiblePages[0] ?? 0
+  useEffect(() => {
+    const strip = stripRef.current
+    const active = strip?.querySelector(`[data-page-index="${firstVisible}"]`)?.closest('.thumb-spread')
+    if (!strip || !active) return
+    const bounds = active.getBoundingClientRect()
+    const viewport = strip.getBoundingClientRect()
+    const delta = revealOffset(bounds.left - viewport.left, bounds.right - viewport.left, strip.clientWidth)
+    if (delta) strip.scrollTo({ left: strip.scrollLeft + delta, behavior: window.matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth' })
+  }, [firstVisible, pages])
   const addInputRef = useRef<HTMLInputElement>(null)
   const [filesOver, setFilesOver] = useState(false)
   const [dragIndex, setDragIndex] = useState<number | null>(null)
   const [overIndex, setOverIndex] = useState<number | null>(null)
   return (
-    <div className="thumb-strip" aria-label="Pages. Drag to reorder, or use Alt and arrow keys.">
+    <div className="thumbnail-panel">
+    <div ref={stripRef} className="thumb-strip" aria-label="Pages. Drag to reorder, or use Alt and arrow keys.">
       {getSpreads(pages.length).map((spread) => (
         <div key={spread[0]} className="thumb-spread" role="group" aria-label={spread.length === 1 ? `Page ${spread[0] + 1}` : `Spread: pages ${spread[0] + 1} and ${spread[1] + 1}`}>
         {spread.map((i) => {
           const p = pages[i]
           return (
-        <button key={p.id} type="button" disabled={disabled} style={{ width: 88 * p.width / p.height }}
+        <button key={p.id} type="button" disabled={disabled} data-page-index={i} style={{ width: thumbnailWidth(p.width, p.height) }}
           className={'thumb' + (i > 0 && i === spread[0] ? ' thumb-left' : '') + (visiblePages.includes(i) ? ' active' : '') + (dragIndex === i ? ' dragging' : '') + (overIndex === i ? ' over' : '')}
           draggable={!disabled} aria-label={`Page ${i + 1}${p.name ? `: ${p.name}` : ''}`} aria-pressed={visiblePages.includes(i)}
           onDragStart={(e) => { setDragIndex(i); e.dataTransfer.effectAllowed = 'move'; e.dataTransfer.setData('text/plain', String(i)) }}
@@ -71,6 +84,8 @@ export default function ThumbnailStrip({ pages, visiblePages, onReorder, onSelec
           if (!disabled && e.target.files?.length) onAddFiles(e.target.files)
           e.target.value = ''
         }} />
+    </div>
+
     </div>
   )
 }

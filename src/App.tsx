@@ -3,6 +3,8 @@ import HTMLFlipBook from 'react-pageflip'
 import { easePageTurns } from './lib/pageTurn'
 import { styleTurnShadow } from './lib/turnShadow'
 import { observePreview } from './lib/observePreview'
+import { isEditingTarget } from './lib/responsive'
+import type { CSSProperties } from 'react'
 import { saveBook, listBooks, getBook, deleteBook } from './lib/idbStore'
 import { fitPage, getSpreads, getSpreadIndex } from './lib/layout'
 import type { Book, BookPage, BookSummary, ExportFormat } from './types'
@@ -42,6 +44,8 @@ export default function App() {
   const [progress, setProgress] = useState<{ current: number; total: number; file: string } | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [exporting, setExporting] = useState<ExportFormat | null>(null)
+  const [arrangePageId, setArrangePageId] = useState<string | null>(null)
+  const arrangeIndex = Math.max(0, pages.findIndex((page) => page.id === arrangePageId))
   const [exportFormat, setExportFormat] = useState<ExportFormat>('pdf')
   const [deletedBook, setDeletedBook] = useState<Book | null>(null)
   const [libraryOpen, setLibraryOpen] = useState(false)
@@ -49,6 +53,10 @@ export default function App() {
   const [zoom, setZoom] = useState(1)
   const [shadows, setShadows] = useState(true)
   const [jump, setJump] = useState('')
+  const [headerHeight, setHeaderHeight] = useState(88)
+  const attachHeader = useCallback((element: HTMLElement | null) => {
+    if (element) return observePreview(element, () => setHeaderHeight(element.getBoundingClientRect().height))
+  }, [])
   const [area, setArea] = useState({ width: 0, height: 0 })
   const fileInputRef = useRef<HTMLInputElement>(null)
   const attachStage = useCallback((element: HTMLDivElement | null) => {
@@ -90,7 +98,7 @@ export default function App() {
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
       const target = e.target as HTMLElement
-      if (showLaunch || !pages.length || busy || e.altKey || e.ctrlKey || e.metaKey) return
+      if (isEditingTarget(e.target) || showLaunch || !pages.length || busy || e.altKey || e.ctrlKey || e.metaKey) return
       if (e.key === 'ArrowRight' || e.key === 'ArrowLeft') {
         e.preventDefault(); e.stopPropagation()
         navigate(e.key === 'ArrowRight' ? 1 : -1)
@@ -184,17 +192,18 @@ export default function App() {
     try {
       let blob: Blob
       if (exportFormat === 'html') {
-        const { buildStandaloneHtml } = await import('./lib/exportHtml')
-        blob = new Blob([buildStandaloneHtml(title, pages)], { type: 'text/html' })
-      } else if (exportFormat === 'pdf') {
-        const { exportSpreadPdf } = await import('./lib/exportPdf')
-        blob = await exportSpreadPdf(title, pages)
+        const [{ buildStandaloneHtml }, { loadEmbeddedFonts }] = await Promise.all([import('./lib/exportHtml'), import('./lib/embeddedFonts')])
+        blob = new Blob([buildStandaloneHtml(title, pages, await loadEmbeddedFonts())], { type: 'text/html' })
+      } else if (exportFormat === 'pdf' || exportFormat === 'pdf-single') {
+        const { exportSpreadPdf, exportSinglePagePdf } = await import('./lib/exportPdf')
+        blob = await (exportFormat === 'pdf-single' ? exportSinglePagePdf : exportSpreadPdf)(title, pages)
       } else {
         const { exportImagesZip } = await import('./lib/exportZip')
         blob = await exportImagesZip(title, pages)
       }
       const filename = (title.trim() || 'Untitled book').replace(/[\\/:*?"<>|]/g, '-')
-      downloadBlob(blob, `${filename}.${exportFormat}`); setStatus(`${exportFormat.toUpperCase()} export ready.`)
+      const extension = exportFormat === 'pdf-single' ? 'pdf' : exportFormat
+      downloadBlob(blob, `${filename}.${extension}`); setStatus(`${extension.toUpperCase()} export ready.`)
     } catch (e) { setError(`Export failed. ${message(e)}`) }
     finally { setExporting(null) }
   }
@@ -216,8 +225,8 @@ export default function App() {
   }
 
   return (
-    <div className="app">
-      <header className="topbar">
+    <div className="app" style={{ '--header-height': `${headerHeight}px` } as CSSProperties}>
+      <header ref={attachHeader} className="topbar">
         <div className="brand">
           <div className="brand-row">
           <button className="brand-home" aria-label="Flipbook launch screen" onClick={() => setShowLaunch(true)}>
@@ -253,8 +262,8 @@ export default function App() {
               <div className="privacy-note">Processed in your browser. Saved books stay on this device.</div>
             </div>
           ) : (
-            <>
-              {mixed && <p className="layout-note">Single-page view preserves each page’s shape. Spreads fit pages inside the first page’s proportions.</p>}
+            <div className="reader-layout">
+              <div className="reader-note">{mixed && <p className="layout-note">Single-page view preserves each page’s shape. Spreads fit pages inside the first page’s proportions.</p>}</div>
               <div className="stage" ref={attachStage} aria-label="Document preview" tabIndex={0}>
                 <div className="stage-content" style={{ width: Math.max(area.width, size.width * (single ? 1 : 2) + 48), height: Math.max(area.height, size.height + 48) }}>
                   {area.width > 0 && (single ? <div className="single-page" style={{ width: size.width, height: size.height }}><img src={source.dataUrl} alt={`Page ${currentPage + 1} of ${pages.length}`} /></div> :
@@ -273,9 +282,15 @@ export default function App() {
                 </div>
               </div>
 
-              <div className="preview-footer"><button className="fullscreen-button" onClick={fullscreen} aria-label="Toggle fullscreen" title="Full screen">⛶</button></div>
-              <div className="page-tray"><div className="tray-heading"><span>PAGES <span className="muted">Drag to reorder</span></span></div><ThumbnailStrip pages={pages} visiblePages={visiblePages} onReorder={reorderPages} onSelect={selectPage} onAddFiles={(files) => { void handleFiles(files, 'append') }} disabled={busy} /></div>
-            </>
+              <div className="preview-footer">
+                <nav className="preview-navigation" aria-label="Page navigation">
+                  <button onClick={() => navigate(-1)} disabled={atStart || busy} aria-label="Previous page or spread">← Previous</button>
+                  <span className="page-count" aria-live="polite">{visiblePages.length > 1 ? `${visiblePages[0] + 1}–${visiblePages[1] + 1}` : currentPage + 1} / {pages.length}</span>
+                  <button onClick={() => navigate(1)} disabled={atEnd || busy} aria-label="Next page or spread">Next →</button>
+                </nav>
+                <button className="fullscreen-button" onClick={fullscreen} aria-label="Toggle fullscreen" title="Full screen">⛶</button></div>
+              <div className="page-tray"><div className="tray-heading"><span>PAGES <span className="muted">Drag to reorder</span></span></div><ThumbnailStrip pages={pages} visiblePages={visiblePages} onReorder={reorderPages} onSelect={(index) => { setArrangePageId(pages[index].id); selectPage(index) }} onAddFiles={(files) => { void handleFiles(files, 'append') }} disabled={busy} /><div className="export-actions tray-export"><label className="sr-only" htmlFor="export-format">Export format</label><select id="export-format" value={exportFormat} onChange={(e) => setExportFormat(e.target.value as ExportFormat)} disabled={busy}><option value="pdf">PDF (Spreads)</option><option value="pdf-single">PDF (Single pages)</option><option value="html">Offline (HTML)</option><option value="zip">Images (ZIP)</option></select><button onClick={doExport} disabled={busy}>{exporting ? 'Exporting…' : 'Export ↓'}</button></div></div>
+            </div>
           )}
 
           <details className="customize">
@@ -289,13 +304,20 @@ export default function App() {
                 </div>
               </div>
               {pages.length > 0 && !showLaunch && <>
+                <div className="reorder-controls" aria-label="Arrange pages">
+                  <label>Arrange page <select aria-label="Page to move" value={pages[arrangeIndex]?.id ?? ''} disabled={busy} onChange={(e) => { setArrangePageId(e.target.value); selectPage(pages.findIndex((page) => page.id === e.target.value)) }}>
+                    {pages.map((page, index) => <option key={page.id} value={page.id}>{index + 1}</option>)}
+                  </select></label>
+                  <button onClick={() => { setArrangePageId(pages[arrangeIndex].id); reorderPages(arrangeIndex, arrangeIndex - 1) }} disabled={busy || arrangeIndex === 0}>← Move earlier</button>
+                  <button onClick={() => { setArrangePageId(pages[arrangeIndex].id); reorderPages(arrangeIndex, arrangeIndex + 1) }} disabled={busy || arrangeIndex === pages.length - 1}>Move later →</button>
+                </div>
                 <div className="reading-toolbar">
-                <div className="toolbar-group"><button onClick={() => navigate(-1)} disabled={atStart || busy} aria-label="Previous page or spread">←</button><span className="page-count" aria-live="polite">{visiblePages.length > 1 ? `Pages ${visiblePages[0] + 1}–${visiblePages[1] + 1}` : `Page ${currentPage + 1}`} <span>of {pages.length}</span></span><button onClick={() => navigate(1)} disabled={atEnd || busy} aria-label="Next page or spread">→</button>
+                <div className="toolbar-group">
                   <form onSubmit={(e) => { e.preventDefault(); const page = Number(jump || currentPage + 1); if (Number.isInteger(page) && page >= 1 && page <= pages.length) { selectPage(page - 1); setJump('') } }}><label className="sr-only" htmlFor="jump">Go to page</label><input id="jump" type="number" min="1" max={pages.length} value={jump} placeholder={String(currentPage + 1)} onChange={(e) => setJump(e.target.value)} disabled={busy} /><button disabled={busy}>Go</button></form>
                 </div>
                 <div className="toolbar-group"><div className="segmented" aria-label="Reading mode"><button aria-pressed={single} onClick={() => { setMode('single'); setZoom(1) }}>Single</button><button aria-pressed={!single} disabled={area.width < 620} title={area.width < 620 ? 'Spreads are available in a wider window' : 'Two-page spread'} onClick={() => { setMode('spread'); setZoom(1) }}>Spread</button></div><button onClick={() => setZoom(Math.max(0.5, zoom - 0.25))} disabled={zoom <= 0.5} aria-label="Zoom out">−</button><button onClick={() => setZoom(1)} title="Fit entire page">{zoom === 1 ? 'Fit' : `${Math.round(zoom * 100)}%`}</button><button onClick={() => setZoom(Math.min(3, zoom + 0.25))} disabled={zoom >= 3} aria-label="Zoom in">+</button></div>
               </div>
-                <div className="customize-options"><label><input type="checkbox" checked={shadows} onChange={(e) => setShadows(e.target.checked)} /> Page shadows</label><div className="export-actions"><label className="sr-only" htmlFor="export-format">Export format</label><select id="export-format" value={exportFormat} onChange={(e) => setExportFormat(e.target.value as ExportFormat)} disabled={busy}><option value="html">Offline HTML viewer</option><option value="pdf">Spreads PDF</option><option value="zip">Page images (ZIP)</option></select><button onClick={doExport} disabled={busy}>{exporting ? 'Exporting…' : 'Export ↓'}</button><button className="quiet" onClick={newBook} disabled={busy}>New book</button></div></div>
+                <div className="customize-options"><label><input type="checkbox" checked={shadows} onChange={(e) => setShadows(e.target.checked)} /> Page shadows</label><div className="export-actions"><button className="quiet" onClick={newBook} disabled={busy}>New book</button></div></div>
               </>}
               {(status || deletedBook) && <div className="notice" role="status"><span>{status}</span>{deletedBook && <button onClick={undoDelete} disabled={busy}>Undo deletion</button>}</div>}
               {libraryOpen && <aside id="book-library" className="sidebar"><div className="library-heading"><h2>Your library</h2><button className="quiet" onClick={() => setLibraryOpen(false)} aria-label="Close library">×</button></div><p className="library-description">Saved in this browser, on this device.</p>{!books.length ? <p className="library-empty">Your saved books will appear here.</p> : <ul>{books.map((book) => <li key={book.id} className={currentBookId === book.id ? 'selected' : ''}><button className="book-link" onClick={() => loadBook(book.id)} disabled={busy}><span className="library-book-icon" aria-hidden="true">▤</span><span><strong>{book.title}</strong><small>{book.pageCount} pages · {new Date(book.updatedAt).toLocaleDateString()}</small></span></button><button className="delete-book" onClick={() => removeBook(book.id)} disabled={busy} aria-label={`Delete ${book.title}`}>×</button></li>)}</ul>}</aside>}
@@ -304,6 +326,11 @@ export default function App() {
         </section>
 
       </main>
+      <footer className="app-footer">
+        <p>Created by Tim Murray · Built with Codex, ChatGPT, and OpenCode · Last updated November 14, 2026</p>
+        <p>Files are processed in your browser. Saved books stay in this browser on this device.</p>
+        <p className="footer-colophon">Colophon: Set in <a href="https://fonts.google.com/specimen/Fira+Sans" target="_blank" rel="noreferrer">Fira Sans</a>, designed by Carrois Apostrophe; self-hosted under the <a href={`${import.meta.env.BASE_URL}fonts/OFL.txt`} target="_blank" rel="noreferrer">SIL Open Font License</a>.</p>
+      </footer>
     </div>
   )
 }
