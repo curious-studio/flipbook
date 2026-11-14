@@ -210,7 +210,7 @@ export default function App() {
   return (
     <div className="app">
       <header className="topbar">
-        <div className="brand"><span className="brand-mark" aria-hidden="true">▤</span><div>Flipbook<span className="brand-subtitle">Your pages, brought together</span></div></div>
+        <div className="brand"><span className="brand-mark" aria-hidden="true">▤</span><div>Flipbook<span className="brand-subtitle">Visualize your pages in a book layout</span></div></div>
         {pages.length > 0 && <div className="header-document"><span className="eyebrow">SPREAD PREVIEW</span><h1 className="preview-title">{title}</h1></div>}
         <div className="topbar-actions">
           <button className="primary" onClick={() => fileInputRef.current?.click()} disabled={busy}>Upload</button>
@@ -226,8 +226,8 @@ export default function App() {
           {!pages.length ? (
             <div className="empty-state" onDrop={(e) => { e.preventDefault(); void handleFiles(e.dataTransfer.files) }} onDragOver={(e) => e.preventDefault()}>
               <span className="eyebrow">BOOK PREVIEW</span>
-              <h1>Give your pages<br />a place to turn.</h1>
-              <p>Bring PDFs and images together in a book you can browse, arrange, and share.</p>
+              <h1>See your layout<br />in two-page spreads.</h1>
+              <p>Drop in PDFs and images to see a book mockup you can arrange and download. (Files are only stored in your browser.)</p>
               <button className="drop-zone" onClick={() => fileInputRef.current?.click()} disabled={busy}>
                 <span className="upload-symbol" aria-hidden="true">↑</span><strong>Choose files or drop them here</strong><span>PDF, PNG, JPEG, WebP, and more · Multiple files welcome</span>
               </button>
