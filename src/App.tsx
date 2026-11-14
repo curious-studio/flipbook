@@ -197,16 +197,16 @@ export default function App() {
             <div className="viewer">
               <HTMLFlipBook
                 ref={flipRef}
-                width={420}
-                height={594}
+                width={460}
+                height={325}
                 size="stretch"
-                minWidth={300}
-                maxWidth={900}
-                minHeight={400}
-                maxHeight={1200}
+                minWidth={320}
+                maxWidth={1000}
+                minHeight={220}
+                maxHeight={700}
                 drawShadow={true}
                 flippingTime={800}
-                usePortrait={true}
+                usePortrait={false}
                 showCover={true}
                 maxShadowOpacity={0.5}
                 className="book"
