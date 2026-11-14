@@ -27,6 +27,7 @@ export default function App() {
   const [pages, setPages] = useState<BookPage[]>([])
   const [currentPage, setCurrentPage] = useState(0)
   const [title, setTitle] = useState('My Flipbook')
+  const [bookSize, setBookSize] = useState({ width: 700, height: 500 })
   const [currentBookId, setCurrentBookId] = useState<string | null>(null)
   const [books, setBooks] = useState<Book[]>([])
   const [loading, setLoading] = useState(false)
@@ -39,6 +40,26 @@ export default function App() {
   useEffect(() => {
     listBooks().then(setBooks).catch(() => {})
   }, [])
+
+  useEffect(() => {
+    const compute = () => {
+      const aspect = pages.length > 0 ? (2 * pages[0].width) / pages[0].height : 2 * (210 / 297)
+      const availW = Math.min(window.innerWidth * 0.88, 1100)
+      const availH = window.innerHeight * 0.62
+      let w: number, h: number
+      if (availW / availH > aspect) {
+        h = availH
+        w = h * aspect
+      } else {
+        w = availW
+        h = w / aspect
+      }
+      setBookSize({ width: Math.round(w), height: Math.round(h) })
+    }
+    compute()
+    window.addEventListener('resize', compute)
+    return () => window.removeEventListener('resize', compute)
+  }, [pages])
 
   const handleFiles = useCallback(async (files: FileList | File[]) => {
     const arr = Array.from(files)
@@ -139,7 +160,10 @@ export default function App() {
   const flipNext = () => flipRef.current?.pageFlip?.()?.flipNext()
   const flipPrev = () => flipRef.current?.pageFlip?.()?.flipPrev()
   const flipTo = (index: number) => {
-    try { flipRef.current?.pageFlip?.()?.flip(index) } catch {}
+    // Jump to the spread that contains the clicked page.
+    // In landscape mode pages are paired; snap to the spread's first page.
+    const target = index <= 0 ? 0 : index % 2 === 0 ? index : index - 1
+    try { flipRef.current?.pageFlip?.()?.flip(target) } catch {}
     setCurrentPage(index)
   }
   const reorderPages = (from: number, to: number) => {
@@ -194,14 +218,14 @@ export default function App() {
           </div>
         ) : (
           <div className="viewer-area">
-            <div className="viewer">
+            <div className="viewer" style={{ position: 'relative' }}>
               <HTMLFlipBook
                 ref={flipRef}
-                width={460}
-                height={325}
-                size="stretch"
+                width={bookSize.width}
+                height={bookSize.height}
+                size="fixed"
                 minWidth={320}
-                maxWidth={1000}
+                maxWidth={1100}
                 minHeight={220}
                 maxHeight={700}
                 drawShadow={true}
@@ -228,6 +252,8 @@ export default function App() {
                   </div>
                 ))}
               </HTMLFlipBook>
+              <button className="nav-arrow nav-arrow-left" onClick={flipPrev} aria-label="Previous spread">◀</button>
+              <button className="nav-arrow nav-arrow-right" onClick={flipNext} aria-label="Next spread">▶</button>
             </div>
             <div className="controls">
               <button onClick={flipPrev}>◀ Prev</button>
