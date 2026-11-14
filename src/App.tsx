@@ -7,6 +7,7 @@ import { buildStandaloneHtml } from './lib/exportHtml'
 import { exportSpreadPdf } from './lib/exportPdf'
 import { exportImagesZip } from './lib/exportZip'
 import type { Book, BookPage } from './types'
+import ThumbnailStrip from './components/ThumbnailStrip'
 import './App.css'
 
 function uid() {
@@ -24,6 +25,7 @@ function downloadBlob(blob: Blob, filename: string) {
 
 export default function App() {
   const [pages, setPages] = useState<BookPage[]>([])
+  const [currentPage, setCurrentPage] = useState(0)
   const [title, setTitle] = useState('My Flipbook')
   const [currentBookId, setCurrentBookId] = useState<string | null>(null)
   const [books, setBooks] = useState<Book[]>([])
@@ -67,6 +69,7 @@ export default function App() {
       setPages(newPages)
       setTitle(newTitle)
       setCurrentBookId(null)
+      setCurrentPage(0)
     } catch (e: any) {
       setError(e?.message || 'Failed to process files')
     } finally {
@@ -99,6 +102,7 @@ export default function App() {
       setPages(b.pages)
       setTitle(b.title)
       setCurrentBookId(b.id)
+      setCurrentPage(0)
     }
   }
 
@@ -134,6 +138,18 @@ export default function App() {
 
   const flipNext = () => flipRef.current?.pageFlip?.()?.flipNext()
   const flipPrev = () => flipRef.current?.pageFlip?.()?.flipPrev()
+  const flipTo = (index: number) => {
+    try { flipRef.current?.pageFlip?.()?.flip(index) } catch {}
+    setCurrentPage(index)
+  }
+  const reorderPages = (from: number, to: number) => {
+    setPages((prev) => {
+      const next = [...prev]
+      const [moved] = next.splice(from, 1)
+      next.splice(to, 0, moved)
+      return next
+    })
+  }
 
   return (
     <div className="app">
@@ -204,6 +220,7 @@ export default function App() {
                 swipeDistance={30}
                 showPageCorners={true}
                 disableFlipByClick={false}
+                onFlip={(e: any) => setCurrentPage(e?.data ?? 0)}
               >
                 {pages.map((p) => (
                   <div key={p.id} className="page">
@@ -225,8 +242,14 @@ export default function App() {
               <button onClick={() => doExport('zip')} disabled={!!exporting}>
                 {exporting === 'zip' ? 'Exporting…' : 'Export ZIP'}
               </button>
-              <button onClick={() => { setPages([]); setCurrentBookId(null) }}>New</button>
+              <button onClick={() => { setPages([]); setCurrentBookId(null); setCurrentPage(0) }}>New</button>
             </div>
+            <ThumbnailStrip
+              pages={pages}
+              currentIndex={currentPage}
+              onReorder={reorderPages}
+              onSelect={flipTo}
+            />
           </div>
         )}
 
