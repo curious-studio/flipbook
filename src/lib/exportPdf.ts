@@ -1,24 +1,25 @@
 import { jsPDF } from 'jspdf'
 import type { BookPage } from '../types'
+import { getSpreads } from './layout.ts'
 
 export async function exportSpreadPdf(title: string, pages: BookPage[]): Promise<Blob> {
-  // Normalize page dimensions to a common height
+  if (!pages.length) throw new Error('No pages to export.')
+  // Use the same page frame as the animated viewer; contain mixed-size pages.
   const targetH = 1400
-  const norm = pages.map((p) => {
-    const scale = targetH / p.height
-    return { p, w: Math.round(p.width * scale), h: targetH }
-  })
+  const pageWidth = Math.round(targetH * pages[0].width / pages[0].height)
+  const norm = pages.map((p) => ({ p, w: pageWidth, h: targetH }))
 
-  // Build spreads
-  const spreads: { left?: typeof norm[0]; right?: typeof norm[0] }[] = []
-  for (let i = 0; i < norm.length; i += 2) {
-    spreads.push({ left: norm[i], right: norm[i + 1] })
-  }
+  // Match the viewer: a front cover, then paired interior pages.
+  const spreads = getSpreads(pages.length).map((indices) => ({
+    left: indices[0] === 0 ? undefined : norm[indices[0]],
+    right: indices[0] === 0 ? norm[0] : indices.length > 1 ? norm[indices[1]] : undefined,
+  }))
+  if (!spreads.length) throw new Error('No pages to export.')
 
   // Canvas for a spread
   const spineW = 24
   const firstSpread = spreads[0]
-  const spreadW = (firstSpread.left?.w ?? targetH) + spineW + (firstSpread.right?.w ?? firstSpread.left?.w ?? targetH)
+  const spreadW = (firstSpread.left?.w ?? firstSpread.right?.w ?? targetH) + spineW + (firstSpread.right?.w ?? firstSpread.left?.w ?? targetH)
   const spreadH = targetH
 
   const pdf = new jsPDF({
@@ -30,7 +31,7 @@ export async function exportSpreadPdf(title: string, pages: BookPage[]): Promise
 
   for (let si = 0; si < spreads.length; si++) {
     const sp = spreads[si]
-    const lw = sp.left?.w ?? spreadW / 2
+    const lw = sp.left?.w ?? sp.right?.w ?? targetH
     const rw = sp.right?.w ?? lw
     const w = lw + spineW + rw
     const h = targetH
@@ -44,12 +45,12 @@ export async function exportSpreadPdf(title: string, pages: BookPage[]): Promise
     // left page
     if (sp.left) {
       const img = await loadImage(sp.left.p.dataUrl)
-      ctx.drawImage(img, 0, 0, lw, h)
+      drawContained(ctx, img, 0, lw, h)
     }
     // right page
     if (sp.right) {
       const img = await loadImage(sp.right.p.dataUrl)
-      ctx.drawImage(img, lw + spineW, 0, rw, h)
+      drawContained(ctx, img, lw + spineW, rw, h)
     } else {
       // blank right page with subtle paper color
       ctx.fillStyle = '#f4f1ea'
@@ -105,4 +106,10 @@ function loadImage(src: string): Promise<HTMLImageElement> {
     img.onerror = reject
     img.src = src
   })
+}
+function drawContained(ctx: CanvasRenderingContext2D, img: HTMLImageElement, x: number, width: number, height: number) {
+  const scale = Math.min(width / img.naturalWidth, height / img.naturalHeight)
+  const w = img.naturalWidth * scale
+  const h = img.naturalHeight * scale
+  ctx.drawImage(img, x + (width - w) / 2, (height - h) / 2, w, h)
 }

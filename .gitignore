@@ -49,3 +49,5 @@ coverage/
 
 # Misc
 *.tgz
+# Local design references
+/design/

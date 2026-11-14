@@ -1,117 +1,44 @@
 import type { BookPage } from '../types'
+import { getSpreads } from './layout.ts'
 
 export function buildStandaloneHtml(title: string, pages: BookPage[]): string {
-  const pageImgs = pages.map((p) => p.dataUrl)
+  if (!pages.length) throw new Error('No pages to export.')
+  const data = JSON.stringify(pages.map(({ dataUrl, width, height }) => ({ dataUrl, width, height }))).replace(/</g, '\\u003c')
   return `<!DOCTYPE html>
-<html lang="en">
-<head>
-<meta charset="UTF-8" />
-<meta name="viewport" content="width=device-width, initial-scale=1.0" />
-<title>${escapeHtml(title)}</title>
-<style>
-  * { box-sizing: border-box; }
-  body {
-    margin: 0; min-height: 100vh; display: grid; place-items: center;
-    background: radial-gradient(circle at 40% 40%, #1a1a2e, #0b0b14);
-    color: #eee; font-family: system-ui, sans-serif; overflow: hidden;
-  }
-  .book-wrap { display: grid; place-items: center; gap: 16px; }
-  .book {
-    position: relative; width: min(90vw, 900px); aspect-ratio: 2 / 1.35;
-    perspective: 2000px;
-  }
-  .page {
-    position: absolute; top: 0; width: 50%; height: 100%; transform-style: preserve-3d;
-    transform-origin: left center; transition: transform 0.7s cubic-bezier(.645,.045,.355,1);
-  }
-  .page.right { left: 50%; transform-origin: right center; }
-  .page .face {
-    position: absolute; inset: 0; backface-visibility: hidden;
-    background: #fff; box-shadow: 0 2px 12px rgba(0,0,0,0.4);
-  }
-  .page .face.back { transform: rotateY(180deg); }
-  .page .face img { width: 100%; height: 100%; object-fit: contain; display: block; background: #fff; }
-  .page.flipped { transform: rotateY(-180deg); }
-  .page.right.flipped { transform: rotateY(180deg); }
-  .spine-shadow {
-    position: absolute; top: 0; bottom: 0; width: 40px; pointer-events: none; z-index: 5;
-  }
-  .spine-shadow.left { left: 50%; background: linear-gradient(to right, rgba(0,0,0,0.35), transparent); }
-  .spine-shadow.right { right: 50%; background: linear-gradient(to left, rgba(0,0,0,0.35), transparent); }
-  .controls { display: flex; gap: 12px; align-items: center; }
-  button { padding: 8px 16px; border: 1px solid #444; background: #2b2b2b; color: #eee; border-radius: 6px; cursor: pointer; }
-  button:hover { background: #3a3a3a; }
-  .counter { font-variant-numeric: tabular-nums; color: #aaa; }
-  .hint { font-size: 12px; color: #666; }
-</style>
-</head>
-<body>
-<div class="book-wrap">
-  <div class="book" id="book"></div>
-  <div class="controls">
-    <button id="prev">◀ Prev</button>
-    <span class="counter" id="counter"></span>
-    <button id="next">Next ▶</button>
-  </div>
-  <div class="hint">Click left/right half or use arrow keys to turn pages</div>
-</div>
-<script>
-const pages = ${JSON.stringify(pageImgs)};
-const book = document.getElementById('book');
-let current = 0; // index of first visible right page (0-based spread)
-// Build page elements: each "page" is a single sheet containing front+back
-const sheets = [];
-for (let i = 0; i < pages.length; i += 2) {
-  const sheet = document.createElement('div');
-  sheet.className = 'page' + (i === 0 ? '' : ' right');
-  // front = pages[i], back = pages[i+1] (or blank)
-  const front = document.createElement('div'); front.className='face';
-  const fi = document.createElement('img'); fi.src = pages[i] || ''; front.appendChild(fi);
-  const back = document.createElement('div'); back.className='face back';
-  const bi = document.createElement('img'); bi.src = pages[i+1] || ''; back.appendChild(bi);
-  sheet.appendChild(front); sheet.appendChild(back);
-  book.appendChild(sheet);
-  sheets.push(sheet);
+<html lang="en"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>${escapeHtml(title)}</title><style>
+*{box-sizing:border-box}body{margin:0;background:#eeeeee;color:#333333;font:14px system-ui,sans-serif;min-height:100svh}header{padding:18px 24px;background:#f7f7f7;border-bottom:1px solid #d2d2d2}h1{font:24px Georgia,serif;margin:0}main{padding:20px}#stage{height:calc(100svh - 190px);min-height:220px;overflow:auto;display:grid;background:#bcbcbc;border-radius:10px}#canvas{position:relative;display:flex;align-items:center;justify-content:center;margin:auto;padding:20px}.page{position:relative;background:white;flex-shrink:0;box-shadow:0 4px 20px #30303015}.page img{display:block;width:100%;height:100%;object-fit:contain}.blank{visibility:hidden}.controls{display:flex;gap:8px;align-items:center;justify-content:center;flex-wrap:wrap;padding:16px 0}button,select{font:inherit;color:inherit;background:#f7f7f7;border:1px solid #bcbcbc;border-radius:6px;padding:8px 12px}button{cursor:pointer}button:disabled{opacity:.4;cursor:default}:focus-visible{outline:3px solid #707070;outline-offset:3px}#counter{min-width:130px;text-align:center;font-variant-numeric:tabular-nums}.hint{text-align:center;font-size:11px;color:#666666;margin:0} @media(max-width:600px){main{padding:10px}#stage{height:calc(100svh - 230px)}}
+.gutter-left::after,.gutter-right::after{content:'';position:absolute;top:0;bottom:0;z-index:2;pointer-events:none}.gutter-left::after{right:0;width:12%;max-width:64px;background:linear-gradient(to right,transparent,rgb(0 0 0 / 2%) 25%,rgb(0 0 0 / 8%) 65%,rgb(0 0 0 / 16%) 96%,rgb(0 0 0 / 22%))}.gutter-right::after{left:0;width:4.5%;max-width:24px;background:linear-gradient(to right,rgb(0 0 0 / 28%),rgb(0 0 0 / 18%) 5%,rgb(0 0 0 / 8%) 30%,rgb(0 0 0 / 2%) 65%,transparent)}
+#canvas.has-fold-seam::after{content:'';position:absolute;top:20px;bottom:20px;left:50%;width:3px;transform:translateX(-50%);background:linear-gradient(to right,transparent,rgb(0 0 0 / 9%) 35%,rgb(0 0 0 / 16%) 50%,rgb(0 0 0 / 9%) 65%,transparent);z-index:3;pointer-events:none}
+</style></head><body><header><h1>${escapeHtml(title)}</h1></header><main><div id="stage" tabindex="0" aria-label="Document preview"><div id="canvas"></div></div><div class="controls"><button id="prev" aria-label="Previous page or spread">← Previous</button><span id="counter" aria-live="polite"></span><button id="next" aria-label="Next page or spread">Next →</button><select id="mode" aria-label="Reading mode"><option value="spread">Spread view</option><option value="single">Single page</option></select><button id="fit">Fit</button><button id="minus" aria-label="Zoom out">−</button><button id="plus" aria-label="Zoom in">+</button></div><p class="hint">Use arrow keys to navigate. Single-page view preserves each page’s proportions.</p></main><script>
+const pages=${data};
+const spreads=${JSON.stringify(getSpreads(pages.length))};
+const stage=document.getElementById('stage'), canvas=document.getElementById('canvas'), mode=document.getElementById('mode');
+let current=0,zoom=1;
+if(pages.some(p=>Math.abs(p.width/p.height-pages[0].width/pages[0].height)>.01)) mode.value='single';
+function isSingle(){return mode.value==='single'||stage.clientWidth<620}
+function spreadIndex(){return Math.max(0,spreads.findIndex(s=>s.includes(current)))}
+function render(){
+ const single=isSingle(), indices=single?[current]:spreads[spreadIndex()], source=pages[single?current:0];
+ const scale=Math.min(Math.max(1,stage.clientWidth-40)/((single?1:2)*source.width),Math.max(1,stage.clientHeight-40)/source.height)*zoom;
+ canvas.replaceChildren();
+ canvas.className=!single&&indices.length===2?'has-fold-seam':'';
+ function add(index){const frame=document.createElement('div');frame.className='page'+(index==null?' blank':!single&&indices.length===2?(index===indices[0]?' gutter-left':' gutter-right'):'');frame.style.width=source.width*scale+'px';frame.style.height=source.height*scale+'px';if(index!=null){const img=document.createElement('img');img.src=pages[index].dataUrl;img.alt='Page '+(index+1);frame.appendChild(img)}canvas.appendChild(frame)}
+ if(!single&&indices[0]===0)add(null);
+ indices.forEach(add);
+ if(!single&&indices.length===1&&indices[0]!==0)add(null);
+ document.getElementById('counter').textContent=(indices.length===1?'Page '+(indices[0]+1):'Pages '+(indices[0]+1)+'–'+(indices[1]+1))+' of '+pages.length;
+ document.getElementById('prev').disabled=single?current===0:spreadIndex()===0;
+ document.getElementById('next').disabled=single?current===pages.length-1:spreadIndex()===spreads.length-1;
+ document.getElementById('minus').disabled=zoom<=.5;document.getElementById('plus').disabled=zoom>=3;
+ document.getElementById('fit').textContent=zoom===1?'Fit':Math.round(zoom*100)+'%';
 }
-// spine shadows
-const sl = document.createElement('div'); sl.className='spine-shadow left'; book.appendChild(sl);
-const sr = document.createElement('div'); sr.className='spine-shadow right'; book.appendChild(sr);
-
-function render() {
-  sheets.forEach((s, idx) => {
-    // a sheet is flipped if its index < current sheet index
-    const sheetIndex = idx;
-    const currentSheet = Math.floor(current / 2);
-    if (sheetIndex < currentSheet) s.classList.add('flipped');
-    else s.classList.remove('flipped');
-    s.style.zIndex = sheets.length - sheetIndex;
-  });
-  const total = pages.length;
-  const shown = Math.min(current + 1, total);
-  document.getElementById('counter').textContent = shown + ' / ' + total;
-}
-function next() {
-  if (current + 2 < pages.length) { current += 2; render(); }
-  else if (current + 1 < pages.length) { current = pages.length; render(); }
-}
-function prev() {
-  if (current > 0) { current -= 2; if (current < 0) current = 0; render(); }
-}
-document.getElementById('next').addEventListener('click', next);
-document.getElementById('prev').addEventListener('click', prev);
-book.addEventListener('click', (e) => {
-  const rect = book.getBoundingClientRect();
-  const x = e.clientX - rect.left;
-  if (x > rect.width / 2) next(); else prev();
-});
-window.addEventListener('keydown', (e) => {
-  if (e.key === 'ArrowRight' || e.key === ' ') next();
-  if (e.key === 'ArrowLeft') prev();
-});
-render();
-</script>
-</body>
-</html>`
+function move(direction){if(isSingle())current=Math.min(pages.length-1,Math.max(0,current+direction));else current=spreads[Math.min(spreads.length-1,Math.max(0,spreadIndex()+direction))][0];render()}
+document.getElementById('prev').onclick=()=>move(-1);document.getElementById('next').onclick=()=>move(1);
+mode.onchange=()=>{zoom=1;render()};document.getElementById('fit').onclick=()=>{zoom=1;render()};document.getElementById('minus').onclick=()=>{zoom=Math.max(.5,zoom-.25);render()};document.getElementById('plus').onclick=()=>{zoom=Math.min(3,zoom+.25);render()};
+window.addEventListener('keydown',e=>{if(e.altKey||e.metaKey||e.ctrlKey)return;if(e.key==='ArrowRight'||e.key==='ArrowLeft'){e.preventDefault();e.stopPropagation();move(e.key==='ArrowRight'?1:-1)}},true);
+new ResizeObserver(render).observe(stage);render();
+</script></body></html>`
 }
 
 function escapeHtml(s: string) {

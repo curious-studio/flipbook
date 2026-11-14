@@ -6,7 +6,9 @@ export async function exportImagesZip(title: string, pages: BookPage[]): Promise
   const folder = zip.folder(title || 'book')!
   pages.forEach((p, i) => {
     const base64 = p.dataUrl.split(',')[1]
-    const ext = p.dataUrl.includes('image/png') ? 'png' : 'jpg'
+    const mime = p.dataUrl.slice(5, p.dataUrl.indexOf(';'))
+    const extensions: Record<string, string> = { 'image/png': 'png', 'image/jpeg': 'jpg', 'image/webp': 'webp', 'image/gif': 'gif', 'image/svg+xml': 'svg', 'image/avif': 'avif', 'image/bmp': 'bmp' }
+    const ext = extensions[mime] || 'bin'
     folder.file(`page-${String(i + 1).padStart(3, '0')}.${ext}`, base64, { base64: true })
   })
   return zip.generateAsync({ type: 'blob' })

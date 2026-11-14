@@ -23,9 +23,10 @@ function readFileAsDataUrl(file: File): Promise<string> {
 }
 
 function getImageDimensions(src: string): Promise<{ width: number; height: number }> {
-  return new Promise((resolve) => {
+  return new Promise((resolve, reject) => {
     const img = new Image()
     img.onload = () => resolve({ width: img.naturalWidth, height: img.naturalHeight })
+    img.onerror = () => reject(new Error("This image could not be decoded. Try a PNG, JPEG, or WebP file."))
     img.src = src
   })
 }
