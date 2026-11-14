@@ -37,8 +37,8 @@ test('cover-first pagination includes each page once for odd, even, single and e
 function offlineReader(pages) {
   const html=buildStandaloneHtml('Test book',pages)
   const elements = new Map()
-  const element = () => ({ style:{},children:[],className:'',value:'spread',clientWidth:1000,clientHeight:600,appendChild(child){this.children.push(child)},replaceChildren(){this.children=[]} })
-  for(const id of ['stage','canvas','mode','counter','prev','next','fit','minus','plus']) elements.set(id,element())
+  const element = () => ({ style:{},children:[],className:'',value:'spread',textContent:'Test book',focus(){},select(){},clientWidth:1000,clientHeight:600,appendChild(child){this.children.push(child)},replaceChildren(){this.children=[]} })
+  for(const id of ['stage','canvas','mode','counter','prev','next','fit','minus','plus','edit-title','title-editor']) elements.set(id,element())
   const context={document:{getElementById:id=>elements.get(id),createElement:element},window:{addEventListener(){}},ResizeObserver:class {observe(){}}}
   vm.runInNewContext(html.match(/<script>([\s\S]*?)<\/script>/)[1],context)
   return elements
@@ -82,7 +82,7 @@ test('exported titles and script data cannot terminate their HTML contexts', () 
   assert.throws(()=>buildStandaloneHtml('Empty',[]),/No pages/)
 })
 
-test('PDF export has cover-first page count and contains mixed images without stretching', async () => {
+test('PDF export has cover-first pagination, touching page edges, and preserves mixed image ratios', async () => {
   const draws=[]
   const oldDocument=globalThis.document, oldImage=globalThis.Image
   globalThis.document={createElement:()=>({width:0,height:0,getContext:()=>({fillRect(){},createLinearGradient:()=>({addColorStop(){}}),drawImage(img,x,y,w,h){draws.push({ratio:img.naturalWidth/img.naturalHeight,w,h,x,y})}}),toDataURL:()=>pixel})}
@@ -94,7 +94,26 @@ test('PDF export has cover-first page count and contains mixed images without st
     const pdf=await blob.text()
     assert.equal((pdf.match(/\/Type \/Page\b/g)||[]).length,3)
     assert.equal(draws.length,4)
+    // Pages 2 and 3 fill their frames horizontally and must meet at the fold.
+    assert.ok(Math.abs(draws[1].x + draws[1].w - draws[2].x) < 1e-8)
+    assert.equal(draws[0].x, draws[2].x)
     draws.forEach(draw=>assert.ok(Math.abs(draw.w/draw.h-draw.ratio)<1e-8))
     await assert.rejects(()=>exportSpreadPdf('Empty',[]),/No pages/)
   } finally {globalThis.document=oldDocument;globalThis.Image=oldImage}
+})
+
+
+test('offline title can be renamed, cancelled, and cannot be cleared or inject markup', () => {
+  const reader=offlineReader(makePages([[595,842]]))
+  const button=reader.get('edit-title'), input=reader.get('title-editor')
+  const key=(value)=>input.onkeydown({key:value,preventDefault(){},stopPropagation(){}})
+  button.onclick(); input.value='  New title  '; key('Enter')
+  assert.equal(button.textContent,'New title')
+  assert.equal(input.hidden,true)
+  button.onclick(); input.value='Discard this'; key('Escape'); input.onblur()
+  assert.equal(button.textContent,'New title')
+  button.onclick(); input.value='   '; input.onblur()
+  assert.equal(button.textContent,'New title')
+  button.onclick(); input.value='<img src=x onerror=alert(1)>'; input.onblur()
+  assert.equal(button.textContent,'<img src=x onerror=alert(1)>')
 })

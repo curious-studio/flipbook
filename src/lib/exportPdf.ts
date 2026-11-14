@@ -17,9 +17,8 @@ export async function exportSpreadPdf(title: string, pages: BookPage[]): Promise
   if (!spreads.length) throw new Error('No pages to export.')
 
   // Canvas for a spread
-  const spineW = 24
   const firstSpread = spreads[0]
-  const spreadW = (firstSpread.left?.w ?? firstSpread.right?.w ?? targetH) + spineW + (firstSpread.right?.w ?? firstSpread.left?.w ?? targetH)
+  const spreadW = (firstSpread.left?.w ?? firstSpread.right?.w ?? targetH) + (firstSpread.right?.w ?? firstSpread.left?.w ?? targetH)
   const spreadH = targetH
 
   const pdf = new jsPDF({
@@ -33,7 +32,7 @@ export async function exportSpreadPdf(title: string, pages: BookPage[]): Promise
     const sp = spreads[si]
     const lw = sp.left?.w ?? sp.right?.w ?? targetH
     const rw = sp.right?.w ?? lw
-    const w = lw + spineW + rw
+    const w = lw + rw
     const h = targetH
     const canvas = document.createElement('canvas')
     canvas.width = w
@@ -50,33 +49,25 @@ export async function exportSpreadPdf(title: string, pages: BookPage[]): Promise
     // right page
     if (sp.right) {
       const img = await loadImage(sp.right.p.dataUrl)
-      drawContained(ctx, img, lw + spineW, rw, h)
+      drawContained(ctx, img, lw, rw, h)
     } else {
       // blank right page with subtle paper color
       ctx.fillStyle = '#f4f1ea'
-      ctx.fillRect(lw + spineW, 0, rw, h)
+      ctx.fillRect(lw, 0, rw, h)
     }
 
-    // spine shadow (center)
-    const grad = ctx.createLinearGradient(lw, 0, lw + spineW, 0)
-    grad.addColorStop(0, 'rgba(0,0,0,0.45)')
-    grad.addColorStop(0.5, 'rgba(0,0,0,0.05)')
-    grad.addColorStop(1, 'rgba(0,0,0,0.45)')
-    ctx.fillStyle = grad
-    ctx.fillRect(lw, 0, spineW, h)
-
-    // inner-edge shadows on each page (curl near spine)
+    // Overlay the fold shading on the touching page edges; no spacer between pages.
     const leftInner = ctx.createLinearGradient(lw - 60, 0, lw, 0)
     leftInner.addColorStop(0, 'rgba(0,0,0,0)')
     leftInner.addColorStop(1, 'rgba(0,0,0,0.18)')
     ctx.fillStyle = leftInner
     ctx.fillRect(lw - 60, 0, 60, h)
 
-    const rightInner = ctx.createLinearGradient(lw + spineW, 0, lw + spineW + 60, 0)
+    const rightInner = ctx.createLinearGradient(lw, 0, lw + 60, 0)
     rightInner.addColorStop(0, 'rgba(0,0,0,0.18)')
     rightInner.addColorStop(1, 'rgba(0,0,0,0)')
     ctx.fillStyle = rightInner
-    ctx.fillRect(lw + spineW, 0, 60, h)
+    ctx.fillRect(lw, 0, 60, h)
 
     // outer page-edge shadows
     const leftOuter = ctx.createLinearGradient(0, 0, 12, 0)

@@ -7,6 +7,7 @@ import { saveBook, listBooks, getBook, deleteBook } from './lib/idbStore'
 import { fitPage, getSpreads, getSpreadIndex } from './lib/layout'
 import type { Book, BookPage, BookSummary, ExportFormat } from './types'
 import ThumbnailStrip from './components/ThumbnailStrip'
+import EditableTitle from './components/EditableTitle'
 import './App.css'
 
 // The flip engine moves DOM nodes outside React's ownership. Recreate it on
@@ -30,6 +31,7 @@ export default function App() {
   const [pages, setPages] = useState<BookPage[]>([])
   const [currentPage, setCurrentPage] = useState(0)
   const [title, setTitle] = useState('Untitled book')
+  const [showLaunch, setShowLaunch] = useState(false)
   const [currentBookId, setCurrentBookId] = useState<string | null>(null)
   const [createdAt, setCreatedAt] = useState(() => Date.now())
   const [books, setBooks] = useState<BookSummary[]>([])
@@ -40,7 +42,7 @@ export default function App() {
   const [progress, setProgress] = useState<{ current: number; total: number; file: string } | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [exporting, setExporting] = useState<ExportFormat | null>(null)
-  const [exportFormat, setExportFormat] = useState<ExportFormat>('html')
+  const [exportFormat, setExportFormat] = useState<ExportFormat>('pdf')
   const [deletedBook, setDeletedBook] = useState<Book | null>(null)
   const [libraryOpen, setLibraryOpen] = useState(false)
   const [mode, setMode] = useState<'spread' | 'single'>('spread')
@@ -88,7 +90,7 @@ export default function App() {
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
       const target = e.target as HTMLElement
-      if (!pages.length || busy || e.altKey || e.ctrlKey || e.metaKey) return
+      if (showLaunch || !pages.length || busy || e.altKey || e.ctrlKey || e.metaKey) return
       if (e.key === 'ArrowRight' || e.key === 'ArrowLeft') {
         e.preventDefault(); e.stopPropagation()
         navigate(e.key === 'ArrowRight' ? 1 : -1)
@@ -99,12 +101,12 @@ export default function App() {
     }
     window.addEventListener('keydown', handler, true)
     return () => window.removeEventListener('keydown', handler, true)
-  }, [pages.length, busy, navigate, selectPage])
+  }, [pages.length, busy, navigate, selectPage, showLaunch])
 
   const canReplace = () => !dirty || window.confirm('Discard unsaved changes to this book? Save first to keep them.')
-  const handleFiles = async (files: FileList | File[]) => {
+  const handleFiles = async (files: FileList | File[], action: 'replace' | 'append' = 'replace') => {
     const arr = Array.from(files)
-    if (!arr.length || busy || !canReplace()) return
+    if (!arr.length || busy || (action === 'replace' && !canReplace())) return
     setLoading(true); setError(null); setStatus(''); setProgress(null)
     try {
       const newPages: BookPage[] = []
@@ -121,10 +123,16 @@ export default function App() {
         } else throw new Error(`Unsupported file: ${file.name}. Choose PDFs or images.`)
       }
       if (!newPages.length) throw new Error('No pages were found in these files.')
-      setPages(newPages); setTitle(arr[0].name.replace(/\.[^.]+$/, '') + (arr.length > 1 ? ' collection' : ''))
-      setCurrentBookId(null); setCreatedAt(Date.now()); setCurrentPage(0); setDirty(true); setZoom(1)
-      setMode(isMixed(newPages) ? 'single' : 'spread')
-      setStatus('')
+      if (action === 'append') {
+        setPages((existing) => [...existing, ...newPages])
+        setStatus(`Added ${newPages.length} ${newPages.length === 1 ? 'page' : 'pages'} to the end of this book.`)
+      } else {
+        setPages(newPages); setTitle(arr[0].name.replace(/\.[^.]+$/, '') + (arr.length > 1 ? ' collection' : ''))
+        setCurrentBookId(null); setCreatedAt(Date.now()); setCurrentPage(0); setZoom(1)
+        setMode(isMixed(newPages) ? 'single' : 'spread')
+        setStatus('')
+      }
+      setDirty(true); setShowLaunch(false)
     } catch (e) { setError(message(e)) }
     finally { setLoading(false); setProgress(null) }
   }
@@ -147,7 +155,7 @@ export default function App() {
       const book = await getBook(id)
       if (!book) throw new Error('This saved book is no longer available.')
       setPages(book.pages); setTitle(book.title); setCurrentBookId(book.id); setCreatedAt(book.createdAt)
-      setCurrentPage(0); setDirty(false); setZoom(1); setMode(isMixed(book.pages) ? 'single' : 'spread'); setStatus('Opened saved book.')
+      setCurrentPage(0); setDirty(false); setZoom(1); setMode(isMixed(book.pages) ? 'single' : 'spread'); setStatus('Opened saved book.'); setShowLaunch(false)
     } catch (e) { setError(message(e)) }
     finally { setLoading(false) }
   }
@@ -210,8 +218,19 @@ export default function App() {
   return (
     <div className="app">
       <header className="topbar">
-        <div className="brand"><span className="brand-mark" aria-hidden="true">▤</span><div>Flipbook<span className="brand-subtitle">Visualize your pages in a book layout</span></div></div>
-        {pages.length > 0 && <div className="header-document"><span className="eyebrow">SPREAD PREVIEW</span><h1 className="preview-title">{title}</h1></div>}
+        <div className="brand">
+          <div className="brand-row">
+          <button className="brand-home" aria-label="Flipbook launch screen" onClick={() => setShowLaunch(true)}>
+            <img className="brand-mark" src={`${import.meta.env.BASE_URL}favicon.svg`} alt="" />
+            <span className="brand-title">Flipbook</span>
+          </button>
+          <div className={'return-reveal' + (showLaunch && pages.length > 0 ? ' is-open' : '')} inert={!showLaunch || pages.length === 0} aria-hidden={!showLaunch || pages.length === 0}>
+            <button className="return-to-book" onClick={() => setShowLaunch(false)}>Return to book</button>
+          </div>
+          </div>
+          <span className="brand-subtitle">Visualize your pages in a book layout</span>
+        </div>
+        {pages.length > 0 && !showLaunch && <div className="header-document"><span className="eyebrow">SPREAD PREVIEW</span><EditableTitle title={title} disabled={busy} onCommit={(next) => { setTitle(next); setDirty(true) }} /></div>}
         <div className="topbar-actions">
           <button className="primary" onClick={() => fileInputRef.current?.click()} disabled={busy}>Upload</button>
         </div>
@@ -223,7 +242,7 @@ export default function App() {
             {error && <div className="notice error" role="alert"><span>{error}</span><button onClick={() => setError(null)} aria-label="Dismiss error">×</button></div>}
             {loading && <div className="notice"><span>{progress ? `Importing ${progress.file} · Page ${progress.current} of ${progress.total}` : 'Opening pages…'}</span></div>}
           </div>
-          {!pages.length ? (
+          {!pages.length || showLaunch ? (
             <div className="empty-state" onDrop={(e) => { e.preventDefault(); void handleFiles(e.dataTransfer.files) }} onDragOver={(e) => e.preventDefault()}>
               <span className="eyebrow">BOOK PREVIEW</span>
               <h1>See your layout<br />in two-page spreads.</h1>
@@ -239,10 +258,10 @@ export default function App() {
               <div className="stage" ref={attachStage} aria-label="Document preview" tabIndex={0}>
                 <div className="stage-content" style={{ width: Math.max(area.width, size.width * (single ? 1 : 2) + 48), height: Math.max(area.height, size.height + 48) }}>
                   {area.width > 0 && (single ? <div className="single-page" style={{ width: size.width, height: size.height }}><img src={source.dataUrl} alt={`Page ${currentPage + 1} of ${pages.length}`} /></div> :
-                    <div className={'flip-frame' + (shadows && visiblePages.length === 2 ? ' has-fold-seam' : '')} style={{ width: size.width * 2, height: size.height, pointerEvents: busy ? 'none' : 'auto' }}><HTMLFlipBook key={`${previewGeneration}:${pages.map((p) => p.id).join(',')}:${shadows}`}
+                    <div className="flip-frame" style={{ width: size.width * 2, height: size.height, pointerEvents: busy ? 'none' : 'auto' }}><HTMLFlipBook key={`${previewGeneration}:${pages.map((p) => p.id).join(',')}:${shadows}`}
                       ref={flipRef} width={pages[0].width} height={pages[0].height} size="stretch" minWidth={1} maxWidth={10000} minHeight={1} maxHeight={10000}
                       drawShadow={shadows} flippingTime={window.matchMedia('(prefers-reduced-motion: reduce)').matches ? 1 : 700} usePortrait={false} showCover={true} maxShadowOpacity={0.2}
-                      className={'book' + (shadows ? ' with-shadows' : '')} style={{}} startPage={currentPage} startZIndex={0} autoSize={true} mobileScrollSupport={false}
+                      className={'book' + (shadows ? ' with-shadows' : '') + (visiblePages.length === 2 ? ' has-open-spread' : '')} style={{}} startPage={currentPage} startZIndex={0} autoSize={true} mobileScrollSupport={false}
                       clickEventForward={true} useMouseEvents={true} swipeDistance={30} showPageCorners={!busy} disableFlipByClick={busy}
                       onInit={(e: { object: { getRender: () => Parameters<typeof easePageTurns>[0] & Parameters<typeof styleTurnShadow>[0]; getState: () => string; getUI: () => { getDistElement: () => HTMLElement } } }) => {
                         easePageTurns(e.object.getRender(), () => window.matchMedia('(prefers-reduced-motion: reduce)').matches, () => e.object.getState())
@@ -255,7 +274,7 @@ export default function App() {
               </div>
 
               <div className="preview-footer"><button className="fullscreen-button" onClick={fullscreen} aria-label="Toggle fullscreen" title="Full screen">⛶</button></div>
-              <div className="page-tray"><div className="tray-heading"><span>PAGES <span className="muted">Drag to reorder</span></span></div><ThumbnailStrip pages={pages} visiblePages={visiblePages} onReorder={reorderPages} onSelect={selectPage} disabled={busy} /></div>
+              <div className="page-tray"><div className="tray-heading"><span>PAGES <span className="muted">Drag to reorder</span></span></div><ThumbnailStrip pages={pages} visiblePages={visiblePages} onReorder={reorderPages} onSelect={selectPage} onAddFiles={(files) => { void handleFiles(files, 'append') }} disabled={busy} /></div>
             </>
           )}
 
@@ -269,14 +288,14 @@ export default function App() {
                   <button onClick={() => setLibraryOpen(!libraryOpen)} aria-expanded={libraryOpen} aria-controls="book-library">Library <span className="badge">{books.length}</span></button>
                 </div>
               </div>
-              {pages.length > 0 && <>
+              {pages.length > 0 && !showLaunch && <>
                 <div className="reading-toolbar">
                 <div className="toolbar-group"><button onClick={() => navigate(-1)} disabled={atStart || busy} aria-label="Previous page or spread">←</button><span className="page-count" aria-live="polite">{visiblePages.length > 1 ? `Pages ${visiblePages[0] + 1}–${visiblePages[1] + 1}` : `Page ${currentPage + 1}`} <span>of {pages.length}</span></span><button onClick={() => navigate(1)} disabled={atEnd || busy} aria-label="Next page or spread">→</button>
                   <form onSubmit={(e) => { e.preventDefault(); const page = Number(jump || currentPage + 1); if (Number.isInteger(page) && page >= 1 && page <= pages.length) { selectPage(page - 1); setJump('') } }}><label className="sr-only" htmlFor="jump">Go to page</label><input id="jump" type="number" min="1" max={pages.length} value={jump} placeholder={String(currentPage + 1)} onChange={(e) => setJump(e.target.value)} disabled={busy} /><button disabled={busy}>Go</button></form>
                 </div>
                 <div className="toolbar-group"><div className="segmented" aria-label="Reading mode"><button aria-pressed={single} onClick={() => { setMode('single'); setZoom(1) }}>Single</button><button aria-pressed={!single} disabled={area.width < 620} title={area.width < 620 ? 'Spreads are available in a wider window' : 'Two-page spread'} onClick={() => { setMode('spread'); setZoom(1) }}>Spread</button></div><button onClick={() => setZoom(Math.max(0.5, zoom - 0.25))} disabled={zoom <= 0.5} aria-label="Zoom out">−</button><button onClick={() => setZoom(1)} title="Fit entire page">{zoom === 1 ? 'Fit' : `${Math.round(zoom * 100)}%`}</button><button onClick={() => setZoom(Math.min(3, zoom + 0.25))} disabled={zoom >= 3} aria-label="Zoom in">+</button></div>
               </div>
-                <div className="customize-options"><label><input type="checkbox" checked={shadows} onChange={(e) => setShadows(e.target.checked)} /> Page shadows</label><div className="export-actions"><label className="sr-only" htmlFor="export-format">Export format</label><select id="export-format" value={exportFormat} onChange={(e) => setExportFormat(e.target.value as ExportFormat)} disabled={busy}><option value="html">Offline HTML viewer</option><option value="pdf">PDF spreads</option><option value="zip">Page images (ZIP)</option></select><button onClick={doExport} disabled={busy}>{exporting ? 'Exporting…' : 'Export ↓'}</button><button className="quiet" onClick={newBook} disabled={busy}>New book</button></div></div>
+                <div className="customize-options"><label><input type="checkbox" checked={shadows} onChange={(e) => setShadows(e.target.checked)} /> Page shadows</label><div className="export-actions"><label className="sr-only" htmlFor="export-format">Export format</label><select id="export-format" value={exportFormat} onChange={(e) => setExportFormat(e.target.value as ExportFormat)} disabled={busy}><option value="html">Offline HTML viewer</option><option value="pdf">Spreads PDF</option><option value="zip">Page images (ZIP)</option></select><button onClick={doExport} disabled={busy}>{exporting ? 'Exporting…' : 'Export ↓'}</button><button className="quiet" onClick={newBook} disabled={busy}>New book</button></div></div>
               </>}
               {(status || deletedBook) && <div className="notice" role="status"><span>{status}</span>{deletedBook && <button onClick={undoDelete} disabled={busy}>Undo deletion</button>}</div>}
               {libraryOpen && <aside id="book-library" className="sidebar"><div className="library-heading"><h2>Your library</h2><button className="quiet" onClick={() => setLibraryOpen(false)} aria-label="Close library">×</button></div><p className="library-description">Saved in this browser, on this device.</p>{!books.length ? <p className="library-empty">Your saved books will appear here.</p> : <ul>{books.map((book) => <li key={book.id} className={currentBookId === book.id ? 'selected' : ''}><button className="book-link" onClick={() => loadBook(book.id)} disabled={busy}><span className="library-book-icon" aria-hidden="true">▤</span><span><strong>{book.title}</strong><small>{book.pageCount} pages · {new Date(book.updatedAt).toLocaleDateString()}</small></span></button><button className="delete-book" onClick={() => removeBook(book.id)} disabled={busy} aria-label={`Delete ${book.title}`}>×</button></li>)}</ul>}</aside>}

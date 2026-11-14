@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useRef, useState } from 'react'
 import type { BookPage } from '../types'
 import { getSpreads } from '../lib/layout'
 
@@ -7,10 +7,13 @@ interface Props {
   visiblePages: number[]
   onReorder: (from: number, to: number) => void
   onSelect: (index: number) => void
+  onAddFiles: (files: FileList) => void
   disabled?: boolean
 }
 
-export default function ThumbnailStrip({ pages, visiblePages, onReorder, onSelect, disabled }: Props) {
+export default function ThumbnailStrip({ pages, visiblePages, onReorder, onSelect, onAddFiles, disabled }: Props) {
+  const addInputRef = useRef<HTMLInputElement>(null)
+  const [filesOver, setFilesOver] = useState(false)
   const [dragIndex, setDragIndex] = useState<number | null>(null)
   const [overIndex, setOverIndex] = useState<number | null>(null)
   return (
@@ -21,7 +24,7 @@ export default function ThumbnailStrip({ pages, visiblePages, onReorder, onSelec
           const p = pages[i]
           return (
         <button key={p.id} type="button" disabled={disabled} style={{ width: 88 * p.width / p.height }}
-          className={'thumb' + (visiblePages.includes(i) ? ' active' : '') + (dragIndex === i ? ' dragging' : '') + (overIndex === i ? ' over' : '')}
+          className={'thumb' + (i > 0 && i === spread[0] ? ' thumb-left' : '') + (visiblePages.includes(i) ? ' active' : '') + (dragIndex === i ? ' dragging' : '') + (overIndex === i ? ' over' : '')}
           draggable={!disabled} aria-label={`Page ${i + 1}${p.name ? `: ${p.name}` : ''}`} aria-pressed={visiblePages.includes(i)}
           onDragStart={(e) => { setDragIndex(i); e.dataTransfer.effectAllowed = 'move'; e.dataTransfer.setData('text/plain', String(i)) }}
           onDragOver={(e) => { if (dragIndex !== null) { e.preventDefault(); setOverIndex(i) } }}
@@ -47,6 +50,27 @@ export default function ThumbnailStrip({ pages, visiblePages, onReorder, onSelec
         })}
         </div>
       ))}
+      <button type="button" className={'thumb-add' + (filesOver && !disabled ? ' files-over' : '')}
+        disabled={disabled} aria-label="Add PDFs or images to the end of this book"
+        title="Add files · Click or drop PDFs and images"
+        onClick={() => addInputRef.current?.click()}
+        onDragOver={(e) => {
+          e.preventDefault()
+          e.dataTransfer.dropEffect = !disabled && e.dataTransfer.types.includes('Files') ? 'copy' : 'none'
+          setFilesOver(!disabled && e.dataTransfer.types.includes('Files'))
+        }}
+        onDragLeave={() => setFilesOver(false)}
+        onDrop={(e) => {
+          e.preventDefault(); e.stopPropagation(); setFilesOver(false)
+          if (!disabled && e.dataTransfer.files.length) onAddFiles(e.dataTransfer.files)
+        }}>
+        <span aria-hidden="true">+</span>
+      </button>
+      <input ref={addInputRef} type="file" multiple accept="application/pdf,image/*" hidden
+        onChange={(e) => {
+          if (!disabled && e.target.files?.length) onAddFiles(e.target.files)
+          e.target.value = ''
+        }} />
     </div>
   )
 }
