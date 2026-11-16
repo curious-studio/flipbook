@@ -8,11 +8,12 @@ interface Props {
   visiblePages: number[]
   onReorder: (from: number, to: number) => void
   onSelect: (index: number) => void
+  onRemove: (index: number) => void
   onAddFiles: (files: FileList) => void
   disabled?: boolean
 }
 
-export default function ThumbnailStrip({ pages, visiblePages, onReorder, onSelect, onAddFiles, disabled }: Props) {
+export default function ThumbnailStrip({ pages, visiblePages, onReorder, onSelect, onRemove, onAddFiles, disabled }: Props) {
   const stripRef = useRef<HTMLDivElement>(null)
   const firstVisible = visiblePages[0] ?? 0
   useEffect(() => {
@@ -35,8 +36,11 @@ export default function ThumbnailStrip({ pages, visiblePages, onReorder, onSelec
         <div key={spread[0]} className="thumb-spread" role="group" aria-label={spread.length === 1 ? `Page ${spread[0] + 1}` : `Spread: pages ${spread[0] + 1} and ${spread[1] + 1}`}>
         {spread.map((i) => {
           const p = pages[i]
+          const selected = visiblePages.includes(i)
+          const left = i > 0 && i === spread[0]
           return (
-        <button key={p.id} type="button" disabled={disabled} data-page-index={i} style={{ width: thumbnailWidth(p.width, p.height) }}
+        <div key={p.id} className={'thumb-item' + (left ? ' thumb-item-left' : '')} style={{ width: thumbnailWidth(p.width, p.height) }}>
+        <button type="button" disabled={disabled} data-page-index={i} style={{ width: '100%' }}
           className={'thumb' + (i > 0 && i === spread[0] ? ' thumb-left' : '') + (visiblePages.includes(i) ? ' active' : '') + (dragIndex === i ? ' dragging' : '') + (overIndex === i ? ' over' : '')}
           draggable={!disabled} aria-label={`Page ${i + 1}${p.name ? `: ${p.name}` : ''}`} aria-pressed={visiblePages.includes(i)}
           onDragStart={(e) => { setDragIndex(i); e.dataTransfer.effectAllowed = 'move'; e.dataTransfer.setData('text/plain', String(i)) }}
@@ -59,6 +63,13 @@ export default function ThumbnailStrip({ pages, visiblePages, onReorder, onSelec
           <img src={p.dataUrl} alt="" loading="lazy" />
           <span className="thumb-num">{i + 1}</span>
         </button>
+        {selected && <>
+          <button type="button" className="thumb-remove-icon" disabled={disabled} aria-label={`Remove page ${i + 1}`} title={`Remove page ${i + 1}`} onClick={() => onRemove(i)}>
+            <svg width="12" height="12" viewBox="0 0 12 12" fill="none" aria-hidden="true"><path d="m3 3 6 6m0-6-6 6" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" /></svg>
+          </button>
+          <button type="button" className="thumb-remove-text" disabled={disabled} aria-label={`Remove page ${i + 1}`} onClick={() => onRemove(i)}>Remove</button>
+        </>}
+        </div>
           )
         })}
         </div>

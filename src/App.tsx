@@ -4,6 +4,8 @@ import { easePageTurns } from './lib/pageTurn'
 import { styleTurnShadow } from './lib/turnShadow'
 import { observePreview } from './lib/observePreview'
 import { isEditingTarget } from './lib/responsive'
+import { historyShortcut, recordEdit, stepHistory } from './lib/history'
+import type { History } from './lib/history'
 import type { CSSProperties } from 'react'
 import { saveBook, listBooks, getBook, deleteBook } from './lib/idbStore'
 import { fitPage, getSpreads, getSpreadIndex } from './lib/layout'
@@ -19,6 +21,8 @@ const previewGeneration = import.meta.hot
   : 0
 
 const uid = () => crypto.randomUUID()
+type ClearedBook = { pages: BookPage[]; currentPage: number; arrangePageId: string | null; dirty: boolean }
+type BookEdit = { pages: BookPage[]; title: string; currentPage: number; arrangePageId: string | null; clearedBook: ClearedBook | null }
 const message = (e: unknown) => e instanceof Error ? e.message : 'Something went wrong. Please try again.'
 const isMixed = (pages: BookPage[]) => pages.some((p) => Math.abs(p.width / p.height - pages[0].width / pages[0].height) > 0.01)
 
@@ -31,9 +35,13 @@ function downloadBlob(blob: Blob, filename: string) {
 
 export default function App() {
   const [pages, setPages] = useState<BookPage[]>([])
+  const [clearedBook, setClearedBook] = useState<ClearedBook | null>(null)
+  const [history, setHistory] = useState<History<BookEdit>>({ past: [], future: [] })
+  const titleEditRecorded = useRef(false)
   const [currentPage, setCurrentPage] = useState(0)
   const [title, setTitle] = useState('Untitled book')
   const [showLaunch, setShowLaunch] = useState(false)
+  const [hasBook, setHasBook] = useState(false)
   const [currentBookId, setCurrentBookId] = useState<string | null>(null)
   const [createdAt, setCreatedAt] = useState(() => Date.now())
   const [books, setBooks] = useState<BookSummary[]>([])
@@ -65,6 +73,25 @@ export default function App() {
   const workspaceRef = useRef<HTMLElement>(null)
   const flipRef = useRef<{ pageFlip: () => { turnToPage: (index: number) => void; flipNext: () => void; flipPrev: () => void; update: () => void } }>(null)
   const busy = loading || saving || !!exporting
+  const snapshot = (): BookEdit => ({ pages, title, currentPage, arrangePageId, clearedBook })
+  const rememberEdit = () => {
+    const current = snapshot()
+    setHistory((previous) => recordEdit(previous, current))
+  }
+  const resetHistory = () => setHistory({ past: [], future: [] })
+  const travelHistory = useCallback((direction: 'undo' | 'redo') => {
+    if (busy) return
+    const step = stepHistory(history, { pages, title, currentPage, arrangePageId, clearedBook }, direction)
+    if (!step) return
+    setHistory(step.history)
+    setPages(step.value.pages); setTitle(step.value.title); setCurrentPage(step.value.currentPage)
+    setArrangePageId(step.value.arrangePageId); setClearedBook(step.value.clearedBook)
+    setDirty(true); setStatus(direction === 'undo' ? 'Edit undone.' : 'Edit redone.')
+  }, [busy, history, pages, title, currentPage, arrangePageId, clearedBook])
+  const renameBook = (next: string) => {
+    if (busy || next === title) return
+    rememberEdit(); setTitle(next); setDirty(true)
+  }
   const mixed = pages.length > 0 && isMixed(pages)
   const single = mode === 'single' || area.width < 620
   const spreads = getSpreads(pages.length)
@@ -98,7 +125,14 @@ export default function App() {
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
       const target = e.target as HTMLElement
-      if (isEditingTarget(e.target) || showLaunch || !pages.length || busy || e.altKey || e.ctrlKey || e.metaKey) return
+      if (isEditingTarget(e.target) || showLaunch || !hasBook || busy || e.isComposing) return
+      const historyDirection = historyShortcut(e)
+      if (historyDirection) {
+        e.preventDefault(); e.stopPropagation()
+        travelHistory(historyDirection)
+        return
+      }
+      if (!pages.length || e.altKey || e.ctrlKey || e.metaKey) return
       if (e.key === 'ArrowRight' || e.key === 'ArrowLeft') {
         e.preventDefault(); e.stopPropagation()
         navigate(e.key === 'ArrowRight' ? 1 : -1)
@@ -109,7 +143,7 @@ export default function App() {
     }
     window.addEventListener('keydown', handler, true)
     return () => window.removeEventListener('keydown', handler, true)
-  }, [pages.length, busy, navigate, selectPage, showLaunch])
+  }, [pages.length, busy, navigate, selectPage, showLaunch, hasBook, travelHistory])
 
   const canReplace = () => !dirty || window.confirm('Discard unsaved changes to this book? Save first to keep them.')
   const handleFiles = async (files: FileList | File[], action: 'replace' | 'append' = 'replace') => {
@@ -132,15 +166,17 @@ export default function App() {
       }
       if (!newPages.length) throw new Error('No pages were found in these files.')
       if (action === 'append') {
+        rememberEdit()
         setPages((existing) => [...existing, ...newPages])
         setStatus(`Added ${newPages.length} ${newPages.length === 1 ? 'page' : 'pages'} to the end of this book.`)
       } else {
+        resetHistory()
         setPages(newPages); setTitle(arr[0].name.replace(/\.[^.]+$/, '') + (arr.length > 1 ? ' collection' : ''))
         setCurrentBookId(null); setCreatedAt(Date.now()); setCurrentPage(0); setZoom(1)
         setMode(isMixed(newPages) ? 'single' : 'spread')
         setStatus('')
       }
-      setDirty(true); setShowLaunch(false)
+      setClearedBook(null); setDirty(true); setHasBook(true); setShowLaunch(false)
     } catch (e) { setError(message(e)) }
     finally { setLoading(false); setProgress(null) }
   }
@@ -162,8 +198,9 @@ export default function App() {
     try {
       const book = await getBook(id)
       if (!book) throw new Error('This saved book is no longer available.')
-      setPages(book.pages); setTitle(book.title); setCurrentBookId(book.id); setCreatedAt(book.createdAt)
-      setCurrentPage(0); setDirty(false); setZoom(1); setMode(isMixed(book.pages) ? 'single' : 'spread'); setStatus('Opened saved book.'); setShowLaunch(false)
+      resetHistory()
+      setClearedBook(null); setPages(book.pages); setTitle(book.title); setCurrentBookId(book.id); setCreatedAt(book.createdAt)
+      setCurrentPage(0); setDirty(false); setZoom(1); setMode(isMixed(book.pages) ? 'single' : 'spread'); setStatus('Opened saved book.'); setHasBook(true); setShowLaunch(false)
     } catch (e) { setError(message(e)) }
     finally { setLoading(false) }
   }
@@ -208,14 +245,40 @@ export default function App() {
     finally { setExporting(null) }
   }
   const reorderPages = (from: number, to: number) => {
-    if (busy || from < 0 || to < 0 || from >= pages.length || to >= pages.length) return
+    if (busy || from === to || from < 0 || to < 0 || from >= pages.length || to >= pages.length) return
+    rememberEdit()
     const activeId = pages[currentPage].id
     const next = [...pages]; const [moved] = next.splice(from, 1); next.splice(to, 0, moved)
     setPages(next); setCurrentPage(next.findIndex((p) => p.id === activeId)); setDirty(true)
   }
+  const removePage = (index: number) => {
+    if (busy || index < 0 || index >= pages.length) return
+    rememberEdit()
+    const next = pages.filter((_, i) => i !== index)
+    const nextPage = Math.max(0, Math.min(currentPage - (index < currentPage ? 1 : 0), next.length - 1))
+    setPages(next); setCurrentPage(nextPage); setDirty(true)
+    if (arrangePageId === pages[index].id) setArrangePageId(next[Math.min(index, next.length - 1)]?.id ?? null)
+    setStatus(`Page ${index + 1} removed.`)
+  }
+  const clearAllPages = () => {
+    if (busy || !pages.length) return
+    rememberEdit()
+    setClearedBook({ pages, currentPage, arrangePageId, dirty })
+    setPages([]); setCurrentPage(0); setArrangePageId(null); setDirty(true)
+    setStatus('All pages cleared.')
+  }
+  const restorePages = () => {
+    if (busy || !clearedBook || pages.length) return
+    rememberEdit()
+    setPages(clearedBook.pages); setCurrentPage(clearedBook.currentPage)
+    setArrangePageId(clearedBook.arrangePageId); setDirty(clearedBook.dirty)
+    setClearedBook(null); setStatus('All pages restored.')
+  }
   const newBook = () => {
     if (busy || !canReplace()) return
-    setPages([]); setCurrentBookId(null); setCurrentPage(0); setTitle('Untitled book'); setDirty(false); setStatus(''); setError(null)
+    resetHistory()
+    setClearedBook(null)
+    setPages([]); setHasBook(false); setCurrentBookId(null); setCurrentPage(0); setTitle('Untitled book'); setDirty(false); setStatus(''); setError(null)
   }
   const fullscreen = async () => {
     try {
@@ -233,13 +296,13 @@ export default function App() {
             <img className="brand-mark" src={`${import.meta.env.BASE_URL}favicon.svg`} alt="" />
             <span className="brand-title">Flipbook</span>
           </button>
-          <div className={'return-reveal' + (showLaunch && pages.length > 0 ? ' is-open' : '')} inert={!showLaunch || pages.length === 0} aria-hidden={!showLaunch || pages.length === 0}>
+          <div className={'return-reveal' + (showLaunch && hasBook ? ' is-open' : '')} inert={!showLaunch || !hasBook} aria-hidden={!showLaunch || !hasBook}>
             <button className="return-to-book" onClick={() => setShowLaunch(false)}>Return to book</button>
           </div>
           </div>
           <span className="brand-subtitle">Visualize your pages in a book layout</span>
         </div>
-        {pages.length > 0 && !showLaunch && <div className="header-document"><span className="eyebrow">SPREAD PREVIEW</span><EditableTitle title={title} disabled={busy} onCommit={(next) => { setTitle(next); setDirty(true) }} /></div>}
+        {hasBook && !showLaunch && <div className="header-document"><span className="eyebrow">SPREAD PREVIEW</span><EditableTitle title={title} disabled={busy} onCommit={renameBook} /></div>}
         <div className="topbar-actions">
           <button className="primary" onClick={() => fileInputRef.current?.click()} disabled={busy}>Upload</button>
         </div>
@@ -251,7 +314,7 @@ export default function App() {
             {error && <div className="notice error" role="alert"><span>{error}</span><button onClick={() => setError(null)} aria-label="Dismiss error">×</button></div>}
             {loading && <div className="notice"><span>{progress ? `Importing ${progress.file} · Page ${progress.current} of ${progress.total}` : 'Opening pages…'}</span></div>}
           </div>
-          {!pages.length || showLaunch ? (
+          {!hasBook || showLaunch ? (
             <div className="empty-state" onDrop={(e) => { e.preventDefault(); void handleFiles(e.dataTransfer.files) }} onDragOver={(e) => e.preventDefault()}>
               <span className="eyebrow">BOOK PREVIEW</span>
               <h1>See your layout<br />in two-page spreads.</h1>
@@ -266,7 +329,7 @@ export default function App() {
               <div className="reader-note">{mixed && <p className="layout-note">Single-page view preserves each page’s shape. Spreads fit pages inside the first page’s proportions.</p>}</div>
               <div className="stage" ref={attachStage} aria-label="Document preview" tabIndex={0}>
                 <div className="stage-content" style={{ width: Math.max(area.width, size.width * (single ? 1 : 2) + 48), height: Math.max(area.height, size.height + 48) }}>
-                  {area.width > 0 && (single ? <div className="single-page" style={{ width: size.width, height: size.height }}><img src={source.dataUrl} alt={`Page ${currentPage + 1} of ${pages.length}`} /></div> :
+                  {pages.length > 0 && area.width > 0 && (single ? <div className="single-page" style={{ width: size.width, height: size.height }}><img src={source.dataUrl} alt={`Page ${currentPage + 1} of ${pages.length}`} /></div> :
                     <div className="flip-frame" style={{ width: size.width * 2, height: size.height, pointerEvents: busy ? 'none' : 'auto' }}><HTMLFlipBook key={`${previewGeneration}:${pages.map((p) => p.id).join(',')}:${shadows}`}
                       ref={flipRef} width={pages[0].width} height={pages[0].height} size="stretch" minWidth={1} maxWidth={10000} minHeight={1} maxHeight={10000}
                       drawShadow={shadows} flippingTime={window.matchMedia('(prefers-reduced-motion: reduce)').matches ? 1 : 700} usePortrait={false} showCover={true} maxShadowOpacity={0.2}
@@ -285,11 +348,22 @@ export default function App() {
               <div className="preview-footer">
                 <nav className="preview-navigation" aria-label="Page navigation">
                   <button onClick={() => navigate(-1)} disabled={atStart || busy} aria-label="Previous page or spread">← Previous</button>
-                  <span className="page-count" aria-live="polite">{visiblePages.length > 1 ? `${visiblePages[0] + 1}–${visiblePages[1] + 1}` : currentPage + 1} / {pages.length}</span>
+                  <span className="page-count" aria-live="polite">{visiblePages.length > 1 ? `${visiblePages[0] + 1}–${visiblePages[1] + 1}` : pages.length ? currentPage + 1 : 0} / {pages.length}</span>
                   <button onClick={() => navigate(1)} disabled={atEnd || busy} aria-label="Next page or spread">Next →</button>
                 </nav>
                 <button className="fullscreen-button" onClick={fullscreen} aria-label="Toggle fullscreen" title="Full screen">⛶</button></div>
-              <div className="page-tray"><div className="tray-heading"><span>PAGES <span className="muted">Drag to reorder</span></span></div><ThumbnailStrip pages={pages} visiblePages={visiblePages} onReorder={reorderPages} onSelect={(index) => { setArrangePageId(pages[index].id); selectPage(index) }} onAddFiles={(files) => { void handleFiles(files, 'append') }} disabled={busy} /><div className="export-actions tray-export"><label className="sr-only" htmlFor="export-format">Export format</label><select id="export-format" value={exportFormat} onChange={(e) => setExportFormat(e.target.value as ExportFormat)} disabled={busy}><option value="pdf">PDF (Spreads)</option><option value="pdf-single">PDF (Single pages)</option><option value="html">Offline (HTML)</option><option value="zip">Images (ZIP)</option></select><button onClick={doExport} disabled={busy}>{exporting ? 'Exporting…' : 'Export ↓'}</button></div></div>
+              <div className="page-tray"><div className="tray-heading"><span>PAGES <span className="muted">Drag to reorder</span></span></div><ThumbnailStrip pages={pages} visiblePages={visiblePages} onReorder={reorderPages} onRemove={removePage} onSelect={(index) => { setArrangePageId(pages[index].id); selectPage(index) }} onAddFiles={(files) => { void handleFiles(files, 'append') }} disabled={busy} /><div className="export-actions tray-export">
+                <div className="clear-pages-actions">
+                  <div className="history-actions">
+                    <button onClick={() => travelHistory('undo')} disabled={busy || !history.past.length}>Undo</button>
+                    <button onClick={() => travelHistory('redo')} disabled={busy || !history.future.length}>Redo</button>
+                  </div>
+                  <button onClick={clearAllPages} disabled={busy || !pages.length}>Clear all</button>
+                  <div className={'return-reveal restore-reveal' + (clearedBook && !pages.length ? ' is-open' : '')} inert={!clearedBook || !!pages.length} aria-hidden={!clearedBook || !!pages.length}>
+                    <button className="return-to-book" onClick={restorePages} disabled={busy}>Restore</button>
+                  </div>
+                </div>
+                <label className="sr-only" htmlFor="export-format">Export format</label><select id="export-format" value={exportFormat} onChange={(e) => setExportFormat(e.target.value as ExportFormat)} disabled={busy}><option value="pdf">PDF (Spreads)</option><option value="pdf-single">PDF (Single pages)</option><option value="html">Offline (HTML)</option><option value="zip">Images (ZIP)</option></select><button onClick={doExport} disabled={busy || !pages.length}>{exporting ? 'Exporting…' : 'Export ↓'}</button></div></div>
             </div>
           )}
 
@@ -297,7 +371,10 @@ export default function App() {
             <summary>Customize <span aria-hidden="true" className="customize-chevron">⌄</span></summary>
             <div className="customize-content">
               <div className="customize-book">
-                <div className="document-title"><label className="customize-label">Book title<input aria-label="Book title" value={title} disabled={!pages.length || busy} onChange={(e) => { setTitle(e.target.value); setDirty(true) }} /></label><span className="save-status">{pages.length ? saving ? 'Saving…' : dirty ? 'Unsaved changes' : 'Saved on this device' : ''}</span></div>
+                <div className="document-title"><label className="customize-label">Book title<input aria-label="Book title" value={title} disabled={!pages.length || busy} onFocus={() => { titleEditRecorded.current = false }} onBlur={() => { titleEditRecorded.current = false }} onChange={(e) => {
+                    if (!titleEditRecorded.current) { rememberEdit(); titleEditRecorded.current = true }
+                    setTitle(e.target.value); setDirty(true)
+                  }} /></label><span className="save-status">{pages.length ? saving ? 'Saving…' : dirty ? 'Unsaved changes' : 'Saved on this device' : ''}</span></div>
                 <div className="customize-actions">
                   <button onClick={saveCurrent} disabled={!pages.length || busy || !dirty}>{saving ? 'Saving…' : 'Save book'}</button>
                   <button onClick={() => setLibraryOpen(!libraryOpen)} aria-expanded={libraryOpen} aria-controls="book-library">Library <span className="badge">{books.length}</span></button>

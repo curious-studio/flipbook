@@ -310,12 +310,21 @@
   .reorder-controls { gap: 4px 8px; }
 }
 
-.thumb-strip { padding-inline: 6px; }
+.thumb-strip { padding: 18px 16px 44px; gap: 32px; }
+.thumb-item { position: relative; flex: 0 0 auto; height: 88px; }
+.app .thumb-remove-icon { position: absolute; top: -12px; right: -12px; z-index: 2; display: grid; place-items: center; width: 24px; height: 24px; min-width: 24px; min-height: 24px; padding: 0; border: 1px solid #aaa; border-radius: 50%; background: #f7f7f7; color: #555; cursor: pointer; }
+.thumb-item-left .thumb-remove-icon { right: auto; left: -12px; }
+.app .thumb-remove-text { position: absolute; top: 100%; left: 50%; transform: translateX(-50%); min-height: 36px; padding: 4px 0; border: 0; background: transparent; color: #666; font-size: .6875rem; cursor: pointer; }
+.app .thumb-remove-text:hover:not(:disabled) { color: #333; text-decoration: underline; }
+.app .thumb-remove-icon:hover:not(:disabled) { color: #333; border-color: #333; }
 
 /* Keep wide thumbnail contents inside the reader rather than sizing its grid column. */
 .reader-layout > * { min-width: 0; }
 
 .tray-export { justify-content: flex-end; flex-wrap: wrap; padding: 2px 0 8px; }
+.clear-pages-actions { display: flex; align-items: center; margin-right: auto; }
+.history-actions { display: flex; gap: 8px; margin-right: 8px; }
+.restore-reveal.is-open { width: 5.5em; }
 .customize .reorder-controls { padding-top: 16px; }
 
 /* The export format is a tertiary text dropdown beside the export action. */
