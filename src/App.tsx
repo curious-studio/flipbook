@@ -41,7 +41,7 @@ export default function App() {
   const [currentPage, setCurrentPage] = useState(0)
   const [title, setTitle] = useState('Untitled book')
   const [showLaunch, setShowLaunch] = useState(false)
-  const [hasBook, setHasBook] = useState(false)
+  const [hasBook, setHasBook] = useState(true)
   const [currentBookId, setCurrentBookId] = useState<string | null>(null)
   const [createdAt, setCreatedAt] = useState(() => Date.now())
   const [books, setBooks] = useState<BookSummary[]>([])
@@ -278,7 +278,7 @@ export default function App() {
     if (busy || !canReplace()) return
     resetHistory()
     setClearedBook(null)
-    setPages([]); setHasBook(false); setCurrentBookId(null); setCurrentPage(0); setTitle('Untitled book'); setDirty(false); setStatus(''); setError(null)
+    setPages([]); setHasBook(true); setShowLaunch(false); setCurrentBookId(null); setCurrentPage(0); setTitle('Untitled book'); setDirty(false); setStatus(''); setError(null)
   }
   const fullscreen = async () => {
     try {
@@ -286,6 +286,20 @@ export default function App() {
       else await workspaceRef.current?.requestFullscreen()
     } catch { setError('Fullscreen is unavailable in this browser.') }
   }
+
+  const emptyBookContent = (
+    <div className="empty-state" onDrop={(e) => {
+      if (showLaunch) { e.preventDefault(); e.stopPropagation(); void handleFiles(e.dataTransfer.files) }
+    }} onDragOver={(e) => e.preventDefault()}>
+              <span className="eyebrow">BOOK PREVIEW</span>
+              <h1>See your layout<br />in two-page spreads.</h1>
+              <p>Drop in PDFs and images to see a book mockup you can arrange and download.</p>
+              <button className="drop-zone" onClick={() => fileInputRef.current?.click()} disabled={busy}>
+                <span className="upload-symbol" aria-hidden="true">↑</span><strong>Choose files or drop them here</strong><span>PDF, PNG, JPEG, WebP, and more · Multiple files welcome</span>
+              </button>
+              <div className="privacy-note">Files are only stored and processed in your browser. Saved books stay on this device.</div>
+            </div>
+  )
 
   return (
     <div className="app" style={{ '--header-height': `${headerHeight}px` } as CSSProperties}>
@@ -315,20 +329,20 @@ export default function App() {
             {loading && <div className="notice"><span>{progress ? `Importing ${progress.file} · Page ${progress.current} of ${progress.total}` : 'Opening pages…'}</span></div>}
           </div>
           {!hasBook || showLaunch ? (
-            <div className="empty-state" onDrop={(e) => { e.preventDefault(); void handleFiles(e.dataTransfer.files) }} onDragOver={(e) => e.preventDefault()}>
-              <span className="eyebrow">BOOK PREVIEW</span>
-              <h1>See your layout<br />in two-page spreads.</h1>
-              <p>Drop in PDFs and images to see a book mockup you can arrange and download. (Files are only stored in your browser.)</p>
-              <button className="drop-zone" onClick={() => fileInputRef.current?.click()} disabled={busy}>
-                <span className="upload-symbol" aria-hidden="true">↑</span><strong>Choose files or drop them here</strong><span>PDF, PNG, JPEG, WebP, and more · Multiple files welcome</span>
-              </button>
-              <div className="privacy-note">Processed in your browser. Saved books stay on this device.</div>
-            </div>
+            emptyBookContent
           ) : (
             <div className="reader-layout">
               <div className="reader-note">{mixed && <p className="layout-note">Single-page view preserves each page’s shape. Spreads fit pages inside the first page’s proportions.</p>}</div>
-              <div className="stage" ref={attachStage} aria-label="Document preview" tabIndex={0}>
-                <div className="stage-content" style={{ width: Math.max(area.width, size.width * (single ? 1 : 2) + 48), height: Math.max(area.height, size.height + 48) }}>
+              <div className={'stage' + (!pages.length ? ' stage-empty' : '')} ref={attachStage} aria-label="Document preview. Drop PDFs or images to add pages." tabIndex={0}
+                onDragOver={(e) => {
+                  e.preventDefault()
+                  e.dataTransfer.dropEffect = !busy && e.dataTransfer.types.includes('Files') ? 'copy' : 'none'
+                }}
+                onDrop={(e) => {
+                  e.preventDefault(); e.stopPropagation()
+                  if (!busy && e.dataTransfer.files.length) void handleFiles(e.dataTransfer.files, 'append')
+                }}>
+                {!pages.length ? emptyBookContent : <div className="stage-content" style={{ width: Math.max(area.width, size.width * (single ? 1 : 2) + 48), height: Math.max(area.height, size.height + 48) }}>
                   {pages.length > 0 && area.width > 0 && (single ? <div className="single-page" style={{ width: size.width, height: size.height }}><img src={source.dataUrl} alt={`Page ${currentPage + 1} of ${pages.length}`} /></div> :
                     <div className="flip-frame" style={{ width: size.width * 2, height: size.height, pointerEvents: busy ? 'none' : 'auto' }}><HTMLFlipBook key={`${previewGeneration}:${pages.map((p) => p.id).join(',')}:${shadows}`}
                       ref={flipRef} width={pages[0].width} height={pages[0].height} size="stretch" minWidth={1} maxWidth={10000} minHeight={1} maxHeight={10000}
@@ -342,7 +356,7 @@ export default function App() {
                       onFlip={(e: { data: number }) => setCurrentPage(e.data)}>
                       {pageElements}
                     </HTMLFlipBook></div>)}
-                </div>
+                </div>}
               </div>
 
               <div className="preview-footer">
